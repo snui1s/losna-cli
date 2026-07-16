@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 $INSTALL_DIR = Join-Path $env:USERPROFILE ".losna"
 $BIN_DIR = Join-Path $INSTALL_DIR "bin"
 $REPO_URL = "https://github.com/snui1s/losna-cli.git"
+$ORIGINAL_DIR = (Get-Location).Path
 
 Write-Host ""
 Write-Host "  Losna CLI Installer" -ForegroundColor Yellow
@@ -29,9 +30,9 @@ if (-not $pythonCmd) {
 # --- Clone or update ---
 if (Test-Path (Join-Path $INSTALL_DIR ".git")) {
     Write-Host "  [1/4] Updating repository..." -ForegroundColor Cyan
-    Push-Location $INSTALL_DIR
+    Set-Location $INSTALL_DIR
     git pull --quiet
-    Pop-Location
+    Set-Location $ORIGINAL_DIR
 } else {
     if (Test-Path $INSTALL_DIR) { Remove-Item -Recurse -Force $INSTALL_DIR }
     Write-Host "  [1/4] Cloning repository..." -ForegroundColor Cyan
@@ -42,10 +43,11 @@ if (Test-Path (Join-Path $INSTALL_DIR ".git")) {
 Write-Host "  [2/4] Creating virtual environment..." -ForegroundColor Cyan
 & $pythonCmd -m venv (Join-Path $INSTALL_DIR ".venv")
 
-# --- Install package (editable so git pull updates take effect immediately) ---
+# --- Ensure pip exists and install package ---
 Write-Host "  [3/4] Installing dependencies..." -ForegroundColor Cyan
-$pip = Join-Path $INSTALL_DIR ".venv\Scripts\pip.exe"
-& $pip install --quiet -e $INSTALL_DIR
+$venvPython = Join-Path $INSTALL_DIR ".venv\Scripts\python.exe"
+& $venvPython -m ensurepip --upgrade 2>$null
+& $venvPython -m pip install --quiet -e $INSTALL_DIR
 
 # --- Create wrapper command & add to PATH ---
 Write-Host "  [4/4] Creating losna command..." -ForegroundColor Cyan
