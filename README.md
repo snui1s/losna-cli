@@ -142,7 +142,3 @@ losna-cli/
   uninstall.ps1         # Windows uninstaller
   pyproject.toml        # Package metadata and dependencies
 ```
-
-## License
-
-ISC
