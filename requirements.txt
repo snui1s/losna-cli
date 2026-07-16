@@ -1,3 +1,6 @@
-openrouter>=0.11.0
-yfinance>=1.5.0
-requests
+openrouter==0.11.23
+prompt_toolkit==3.0.52
+pytest==9.1.1
+Requests==2.34.2
+rich==15.0.0
+yfinance==1.5.1

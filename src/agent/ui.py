@@ -15,8 +15,10 @@ class SlashCompleter(Completer):
         text = document.text_before_cursor.lstrip()
         if not text.startswith('/'):
             return
+        
+        text_lower = text.lower()
         for cmd in self.commands:
-            if cmd.startswith(text):
+            if cmd.lower().startswith(text_lower):
                 yield Completion(cmd, start_position=-len(text))
 
 class Spinner:
@@ -75,7 +77,7 @@ def get_user_input(skills):
         skills: List of dicts representing available skills, e.g. [{"name": ...}]
     Returns the typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/exit', '/quit']
+    words = ['/help', '/sessions', '/new', '/switch', '/exit', '/quit', '/search']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = SlashCompleter(words)
@@ -119,7 +121,7 @@ def print_banner(model_name, project_path):
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.1.0{RESET}",
+        f"{LIGHT_BLUE}Losna CLI 0.1.3{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]

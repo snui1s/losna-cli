@@ -555,8 +555,33 @@ def git_commit_and_push(commit_message, confirmed=False):
 
 def web_search(query, max_results=5):
     """Search the web for current information."""
+    global TAVILY_API_KEY
     if not TAVILY_API_KEY:
-        return "Error: TAVILY_API_KEY not set in .env"
+        # Prompt user dynamically when they attempt to use the web search tool
+        print(f"\n\033[1;33m[Losna Search Config]:\033[0m Tavily API Key not found.")
+        user_val = input("Please enter your Tavily API Key: ").strip()
+        if user_val:
+            TAVILY_API_KEY = user_val
+            # Save globally to ~/.losnarc
+            try:
+                import json
+                from pathlib import Path
+                home_config_path = Path.home() / ".losnarc"
+                config_data = {}
+                if home_config_path.exists():
+                    try:
+                        with open(home_config_path, "r", encoding="utf-8") as f:
+                            config_data = json.load(f)
+                    except:
+                        pass
+                config_data["TAVILY_API_KEY"] = user_val
+                with open(home_config_path, "w", encoding="utf-8") as f:
+                    json.dump(config_data, f, indent=4)
+                print(f"\033[1;32mSaved globally to {home_config_path}\033[0m")
+            except Exception as e:
+                print(f"\033[1;31mFailed to save config globally: {e}\033[0m")
+        else:
+            return "Error: TAVILY_API_KEY is required to run web search."
     
     try:
         response = requests.post(
