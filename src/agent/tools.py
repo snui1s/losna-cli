@@ -338,7 +338,7 @@ def replace_in_file(filepath, old_text, new_text):
     except Exception as e:
         return f"Error replacing text in file: {str(e)}"
 
-def delete_local_file(filepath):
+def delete_local_file(filepath, confirmed=False):
     """Simulate 'rm' command: Delete unnecessary or temporary files to keep the workspace organized."""
     try:
         base_dir = os.path.realpath(os.getcwd())
@@ -357,9 +357,12 @@ def delete_local_file(filepath):
         if os.path.isdir(target_path):
             return f"Error: '{filepath}' is a directory. This tool only deletes files."
         
-        confirm = input(f"\n[!!!] Agent requests to DELETE file: '{filepath}'. Allow? (y/n): ")
-        if confirm.lower() != 'y':
-            return "Error: File deletion aborted by user."
+        RED = "\033[1;31m"
+        GREEN = "\033[1;32m"
+        RESET = "\033[0m"
+        if not confirmed:
+            return (f"CONFIRMATION_REQUIRED: The agent requests to delete the file '{filepath}'. "
+                    f"Ask the user to confirm before re-calling this tool with confirmed=true.")
 
         os.remove(target_path)
         return f"Success: Deleted file '{filepath}'."
@@ -409,7 +412,8 @@ SHELL_DANGEROUS_PREFIXES = [
     'yarn add', 'yarn remove', 'yarn install',
     'pnpm add', 'pnpm remove', 'pnpm install',
     'bun add', 'bun remove', 'bun install',
-    'cargo add', 'cargo rm'
+    'cargo add', 'cargo rm',
+    'del', 'erase', 'rd', 'rmdir', 'cmd', 'powershell', 'bash', 'sh'
 ]
 
 SHELL_TIMEOUT_SECONDS = 10
@@ -446,9 +450,12 @@ def execute_shell_command(command, confirmed=False):
                 return f"Error: Blocked - command matches a forbidden pattern ('{pattern}')."
 
         # 2. Soft block: dangerous commands need confirmed=True to proceed
-        stripped = command.strip()
+        # Split command into lowercase words/tokens to check for dangerous commands
+        import re
+        tokens = set(re.findall(r'\b[a-zA-Z0-9_-]+\b', lowered))
+        
         for prefix in SHELL_DANGEROUS_PREFIXES:
-            if stripped.startswith(prefix) or f" {prefix} " in f" {stripped} ":
+            if prefix.lower() in tokens or lowered.strip().startswith(prefix.lower()):
                 if not confirmed:
                     return (f"CONFIRMATION_REQUIRED: The command '{command}' is potentially "
                             f"destructive or impactful. Ask the user to confirm before "
@@ -984,7 +991,8 @@ def dispatch_tool(func_name, args):
             
         elif func_name == "delete_local_file":
             filepath = args.get("filepath", "")
-            tool_result = delete_local_file(filepath)
+            confirmed = args.get("confirmed", False)
+            tool_result = delete_local_file(filepath, confirmed=confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: delete_local_file('{filepath}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
             
@@ -997,33 +1005,17 @@ def dispatch_tool(func_name, args):
 
         elif func_name == "execute_shell_command":
             shell_cmd = args.get("command", "")
-            tool_result = execute_shell_command(shell_cmd, confirmed=False)
+            confirmed = args.get("confirmed", False)
+            tool_result = execute_shell_command(shell_cmd, confirmed=confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: execute_shell_command('{shell_cmd}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
 
-            if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED"):
-                confirm_input = input(f"  [Confirm]: Allow this command to run? (y/n): ").strip().lower()
-                if confirm_input == "y":
-                    tool_result = execute_shell_command(shell_cmd, confirmed=True)
-                    print(f"  [Tool]: execute_shell_command('{shell_cmd}', confirmed) => {tool_result}")
-                else:
-                    tool_result = "User declined to run this command."
-                    print("  [System]: Command declined by user.")
-
         elif func_name == "git_commit_and_push":
             commit_msg = args.get("commit_message", "")
-            tool_result = git_commit_and_push(commit_msg, confirmed=False)
+            confirmed = args.get("confirmed", False)
+            tool_result = git_commit_and_push(commit_msg, confirmed=confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: git_commit_and_push('{commit_msg}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
-
-            if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED"):
-                confirm_input = input(f"  [Confirm]: Allow commit & push? (y/n): ").strip().lower()
-                if confirm_input == "y":
-                    tool_result = git_commit_and_push(commit_msg, confirmed=True)
-                    print(f"  [Tool]: git_commit_and_push('{commit_msg}', confirmed) => {tool_result}")
-                else:
-                    tool_result = "User declined to commit/push."
-                    print("  [System]: Commit/push declined by user.")
 
         elif func_name == "web_search":
             query = args.get("query", "")

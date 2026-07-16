@@ -82,7 +82,8 @@ def compact_memory(conversation_history, max_active_messages, keep_recent, model
             print("  [System]: Compacting context (summarizing + extracting memory)...")
             compaction_start_time = time.time()
             
-            with OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY")) as client:
+            from . import config
+            with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
                 sum_response = client.chat.send(
                     model=model_name,
                     messages=[{"role": "user", "content": combined_prompt}]

@@ -239,8 +239,39 @@ def main():
                             try:
                                 # Run the dispatcher
                                 tool_result = dispatch_tool(func_name, args)
+                                
+                                # Handle interactive soft-block confirmation prompts
+                                if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
+                                    # Stop the spinner first to release and clear the stdout line
+                                    tool_spinner.stop()
+                                    
+                                    # Colors for confirmation prompt
+                                    RED = "\033[1;31m"
+                                    GREEN = "\033[1;32m"
+                                    RESET = "\033[0m"
+                                    
+                                    # Prompt the user for validation on dangerous operations
+                                    confirm_prompt = input(f"\n{RED}[!!!]{RESET} Agent requests to execute dangerous command:\n  '{args.get('command') or args.get('command_line') or func_name}'\nAllow execution? ({GREEN}y{RESET}/{RED}n{RESET}): ").strip().lower()
+                                    if confirm_prompt == 'y':
+                                        # Re-run with confirmed=True
+                                        args['confirmed'] = True
+                                        # Re-create a fresh spinner instance since the previous one was stopped
+                                        tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary} (Confirmed)")
+                                        tool_spinner.start()
+                                        try:
+                                            tool_result = dispatch_tool(func_name, args)
+                                        finally:
+                                            tool_spinner.stop()
+                                    else:
+                                        tool_result = "Error: Command execution declined by the user."
+                                        print("  [System]: Command declined by user.")
                             finally:
-                                tool_spinner.stop()
+                                # Safe guard to stop spinner if it is still running
+                                if 'tool_spinner' in locals():
+                                    try:
+                                        tool_spinner.stop()
+                                    except:
+                                        pass
                             
                             # Print success checkmark instead of raw log dump
                             print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
