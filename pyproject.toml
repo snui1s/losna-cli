@@ -1,0 +1,16 @@
+[project]
+name = "openrouter-agent"
+version = "0.1.0"
+description = "An AI agent using OpenRouter API with memory compaction, offloading, and tools"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openrouter>=0.11.0",
+    "yfinance>=1.5.0",
+    "requests",
+    "pytest>=9.1.1",
+]
+
+[tool.uv]
+package = false
+
