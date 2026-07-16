@@ -1,0 +1,2 @@
+# losna-cli
+agent cli
