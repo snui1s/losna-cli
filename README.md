@@ -207,7 +207,3 @@ losna-cli/
   uninstall.sh          # macOS/Linux uninstaller
   pyproject.toml        # Package metadata and dependencies
 ```
-
-## License
-
-ISC
