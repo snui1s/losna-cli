@@ -37,8 +37,20 @@ def get_or_prompt_key(env_name: str, display_name: str) -> str:
     return user_val
 
 # --- Configurations ---
-MODEL_NAME = "deepseek/deepseek-v4-flash"
+MODEL_NAME = global_config.get("MODEL_NAME", "deepseek/deepseek-v4-flash")
 COMPACTION_MODEL = "google/gemini-2.5-flash-lite"
+
+def update_model_name(new_model_name: str):
+    """Save the selected OpenRouter model globally in ~/.losnarc."""
+    global MODEL_NAME
+    MODEL_NAME = new_model_name
+    global_config["MODEL_NAME"] = new_model_name
+    try:
+        with open(home_config_path, "w", encoding="utf-8") as f:
+            json.dump(global_config, f, indent=4)
+        print(f"\033[1;32mModel updated globally to: {new_model_name}\033[0m")
+    except Exception as e:
+        print(f"\033[1;31mFailed to save new model globally: {e}\033[0m")
 
 MAX_RETRIES = 3
 RETRY_DELAY = 2

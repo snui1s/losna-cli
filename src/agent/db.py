@@ -138,12 +138,22 @@ def touch_session(session_id):
 
 
 def session_exists(session_id):
+    """Return True if session_id is a valid, existing session."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,))
-    exists = cur.fetchone() is not None
+    row = cur.fetchone()
     conn.close()
-    return exists
+    return bool(row)
+
+
+def delete_session(session_id):
+    """Delete a session by its ID. SQLite foreign keys ON DELETE CASCADE will wipe dependencies."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
 
 
 # --- Message management ---

@@ -77,7 +77,7 @@ def get_user_input(skills):
         skills: List of dicts representing available skills, e.g. [{"name": ...}]
     Returns the typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/exit', '/quit', '/search']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = SlashCompleter(words)

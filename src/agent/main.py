@@ -12,6 +12,7 @@ from . import skills_loader
 from .tools import my_tools, dispatch_tool
 from .memory import compact_memory
 from .ui import Spinner, get_user_input, print_banner, print_agent_response
+from . import plugin_manager
 
 def main():
     # --- Startup Initialization ---
@@ -50,6 +51,11 @@ def main():
             print("  /sessions      - List all chat sessions (tabs) and see their IDs")
             print("  /new <title>   - Start a new chat session (e.g. '/new Web Development')")
             print("  /switch <id>   - Switch to an existing chat session by its ID (e.g. '/switch 3')")
+            print("  /delete_session <id> - Delete an existing chat session by its ID")
+            print("  /history [id]  - View the chat logs and tool call history for a session (defaults to current)")
+            print("  /model         - View current OpenRouter model or switch to a new model ID")
+            print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
+            print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
             print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
             print("  /exit, /quit   - Terminate the agent harness session")
             if skills:
@@ -91,6 +97,149 @@ def main():
                 print(f"Switched to session [{current_session_id}] with {len(conversation_history)} message(s)\n")
             else:
                 print(f"Session '{target}' not found. Use '/sessions' to see available chats.\n")
+        if user_input.lower().startswith("/delete_session"):
+            target = user_input[15:].strip()
+            if target.isdigit() and db.session_exists(int(target)):
+                target_id = int(target)
+                if target_id == current_session_id:
+                    # If deleting current session, check if there are others to switch to
+                    all_sessions = db.list_sessions()
+                    other_sessions = [s for s in all_sessions if s["id"] != current_session_id]
+                    if other_sessions:
+                        # Switch to the most recently updated session first
+                        new_session = other_sessions[0]
+                        current_session_id = new_session["id"]
+                        archived_count, last_summary = db.get_compaction_state(current_session_id)
+                        loaded = db.load_messages(current_session_id, skip=archived_count)
+                        SYSTEM_PROMPT = prompts.build_system_prompt()
+                        if last_summary:
+                            SYSTEM_PROMPT += f"\n\n[Previous Context Summary]: {last_summary}"
+                        if not loaded or loaded[0].get("role") != "system":
+                            loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
+                        else:
+                            loaded[0]["content"] = SYSTEM_PROMPT
+                        conversation_history = loaded
+                        db.delete_session(target_id)
+                        print(f"Deleted current session. Switched to session [{current_session_id}] '{new_session['title']}'\n")
+                    else:
+                        # If it is the last session, delete and automatically spawn a new one
+                        db.delete_session(target_id)
+                        current_session_id = db.create_session("New Chat")
+                        SYSTEM_PROMPT = prompts.build_system_prompt()
+                        conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+                        print(f"Deleted final session. Created and switched to a fresh session [{current_session_id}] 'New Chat'\n")
+                else:
+                    db.delete_session(target_id)
+                    print(f"Deleted session [{target_id}] successfully.\n")
+            else:
+                print(f"Session '{target}' not found. Use '/sessions' to view IDs.\n")
+            continue
+        if user_input.lower().startswith("/history"):
+            target = user_input[8:].strip()
+            # If no ID provided, default to current session
+            target_id = current_session_id
+            if target:
+                if target.isdigit() and db.session_exists(int(target)):
+                    target_id = int(target)
+                else:
+                    print(f"Session '{target}' not found. Use '/sessions' to view valid IDs.\n")
+                    continue
+
+            # Load the messages (both active and compacted summaries if available)
+            all_msgs = db.load_messages(target_id, skip=0)
+            _, last_summary = db.get_compaction_state(target_id)
+
+            print(f"\n=== Chat History for Session [{target_id}] ===")
+            if last_summary:
+                print(f"\033[1;33m[Compacted Context Summary]:\033[0m {last_summary}\n")
+            
+            # Print messages nicely formatted
+            has_messages = False
+            for m in all_msgs:
+                role = m.get("role", "unknown").upper()
+                content = m.get("content", "").strip()
+                if role == "SYSTEM":
+                    continue  # Skip raw system instructions to keep history clean
+                
+                has_messages = True
+                if role == "USER":
+                    print(f"\033[1;32mUser:\033[0m {content}")
+                elif role == "ASSISTANT":
+                    # If it has tool calls, print them
+                    if m.get("tool_calls"):
+                        for tc in m["tool_calls"]:
+                            print(f"\033[1;36mAssistant requested tool:\033[0m {tc.get('function', {}).get('name')} {tc.get('function', {}).get('arguments')}")
+                    if content:
+                        print(f"\033[1;34mAssistant:\033[0m {content}")
+                elif role == "TOOL":
+                    print(f"  \033[1;30m[Tool Return ({m.get('name')}):\033[0m \033[0;37m{content}\033[1;30m]\033[0m")
+                print("-" * 50)
+            
+            if not has_messages:
+                print("No user or assistant messages in this session yet.")
+            print()
+            continue
+        if user_input.lower().startswith("/plugin"):
+            parts = user_input.split()
+            # Expected syntax: /plugin add <repo_url> [--skill <name>] OR /plugin remove <name>
+            if len(parts) >= 3 and parts[1].lower() == "add":
+                repo_url = parts[2]
+                skill_name = None
+                if "--skill" in parts:
+                    try:
+                        idx = parts.index("--skill")
+                        if idx + 1 < len(parts):
+                            skill_name = parts[idx + 1]
+                    except ValueError:
+                        pass
+                
+                print(f"  [System]: Attempting to install plugin...")
+                result_msg = plugin_manager.install_plugin(repo_url, skill_name)
+                print(f"\n{result_msg}\n")
+            elif len(parts) >= 2 and parts[1].lower() == "remove":
+                skill_to_remove = parts[2] if len(parts) >= 3 else None
+                
+                # If no skill name is specified directly, list installed skills and ask user
+                if not skill_to_remove:
+                    current_skills = skills_loader.list_skills()
+                    if not current_skills:
+                        print("  [System]: No plugins/skills are currently installed.\n")
+                        continue
+                        
+                    print("\nInstalled Plugins/Skills:")
+                    for idx, s in enumerate(current_skills, start=1):
+                        print(f"  [{idx}] /{s['name']} - {s['description']}")
+                    print()
+                    
+                    choice = input("Enter the number of the plugin to delete (or Press Enter to cancel): ").strip()
+                    if choice.isdigit():
+                        choice_idx = int(choice) - 1
+                        if 0 <= choice_idx < len(current_skills):
+                            skill_to_remove = current_skills[choice_idx]["name"]
+                        else:
+                            print("Invalid number. Operation canceled.\n")
+                            continue
+                    else:
+                        print("Operation canceled.\n")
+                        continue
+                
+                print(f"  [System]: Attempting to remove plugin '{skill_to_remove}'...")
+                result_msg = plugin_manager.remove_plugin(skill_to_remove)
+                print(f"\n{result_msg}\n")
+            else:
+                print("Usage:")
+                print("  /plugin add <repository_url> [--skill <skill_name>]")
+                print("  /plugin remove [skill_name]\n")
+            continue
+
+        if user_input.lower().startswith("/model"):
+            print(f"\nCurrent Model: \033[1;36m{config.MODEL_NAME}\033[0m")
+            new_model = input("Enter OpenRouter Model ID (e.g. 'google/gemini-2.5-pro'): ").strip()
+            if new_model:
+                config.update_model_name(new_model)
+            else:
+                print("Model change canceled.")
+            print()
             continue
 
         if user_input.lower().startswith("/search"):
@@ -116,7 +265,7 @@ def main():
 
         # Check for dynamic skill command (e.g. /unit-testing <query>)
         command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/exit', '/quit', '/search'}
+        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin'}
         if not is_skill_cmd and user_input.startswith("/") and command not in reserved_commands:        
             parts = user_input.split(maxsplit=1)
             cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'

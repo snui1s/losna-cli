@@ -13,12 +13,13 @@ A terminal-based AI developer assistant powered by OpenRouter. Losna CLI brings 
 ### Intelligence
 
 - **Memory Compaction** — Automatically compresses older conversation context when the message history exceeds configurable thresholds, preserving a summary of previous discussions while keeping token costs low.
-- **Skill System** — Drop markdown instruction files into a `skills/` directory in your project. The agent can dynamically load and follow these instructions via slash commands (e.g., `/unit-testing`).
+- **Skill & Plugin System** — Add markdown instruction files to `./skills/` or install plugins directly from remote repositories via `/plugin`. The agent dynamically loads and follows these instructions.
 - **Web Search** — Optional, agent-driven web search powered by Tavily. The `/search` command instructs the AI to query the web and synthesize results. Tavily API key is only requested when you first use this feature.
 
 ### User Experience
 
 - **Styled Terminal Output** — Agent responses are rendered as rich markdown with gold-themed headers, styled blockquotes, and syntax-highlighted code blocks.
+- **Interactive Command Confirmation** — The CLI intercepts dangerous system commands or file deletions, stops the active spinner, and requests confirmation in colorized (`y`/`n`) text to ensure safety.
 - **Live Typewriter Effect** — Responses appear progressively with a typewriter animation for a natural conversational feel.
 - **Dynamic Spinners** — Moon-phase animated spinners display during AI processing and tool execution, with success checkmarks on completion.
 
@@ -114,12 +115,74 @@ The agent operates in the context of your current working directory. It can read
 | `/new <title>` | Start a new chat session with a custom title |
 | `/sessions` | List all saved chat sessions with their IDs |
 | `/switch <id>` | Switch to a different chat session by ID |
+| `/delete_session <id>` | Delete an existing chat session by its ID |
+| `/history [id]` | View chat logs and tool execution history for a session (defaults to current) |
+| `/model` | View the current OpenRouter model or switch to a new model ID |
+| `/plugin add <url>` | Download and install all skills in a GitHub repository |
+| `/plugin add <url> --skill <name>` | Download and install one specific skill from a GitHub repository |
+| `/plugin remove` | Show a numbered list of installed plugins to choose for removal |
+| `/plugin remove <name>` | Uninstall/remove a specific custom skill plugin from project |
 | `/search <query>` | Instruct the agent to search the web and report findings |
 | `/exit` or `/quit` | Close the current session |
 
-### Skill Commands
+### Skill & Plugin Commands
 
 If your project contains a `skills/` directory with markdown instruction files, they will appear as additional slash commands. For example, a file at `skills/unit-testing/SKILL.md` becomes available as `/unit-testing`.
+
+#### Installing Plugins from GitHub
+
+You can dynamically import custom skills and prompt packages directly into your project's local workspace from remote Git repositories using the `/plugin` command:
+
+**Option A: Install all skills from a repository (Auto-detect)**
+If you do not specify a skill name, Losna CLI scans the repository and installs every skill it finds:
+```bash
+/plugin add https://github.com/JuliusBrussee/caveman
+```
+
+**Option B: Install only one specific skill**
+Use the `--skill` option followed by the folder name to install only a single skill:
+```bash
+/plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
+```
+
+#### Uninstalling/Removing a plugin
+
+**Option A: Interactive List Selection (Recommended)**
+Type the command without arguments. Losna CLI will show a numbered list of installed skills for you to pick and delete:
+```bash
+/plugin remove
+```
+
+**Option B: Delete directly by name**
+If you already know the name of the skill/plugin folder, you can delete it immediately:
+```bash
+/plugin remove caveman
+```
+
+#### Writing Custom Plugins
+
+A Losna CLI plugin is simple. To write your own, create the following directory structure in your project:
+
+```
+skills/
+  my-custom-skill/
+    SKILL.md
+```
+
+Inside `SKILL.md`, define a YAML header at the top, followed by markdown instructions for the AI:
+
+```markdown
+---
+name: my-custom-skill
+description: Guides the agent on how to write code according to my team's style guide.
+---
+# Instructions
+When this skill is invoked:
+1. Always prefix variable names with...
+2. Use strict typing...
+```
+
+Once saved, the command `/my-custom-skill` becomes instantly available via autocomplete in the Losna prompt. Calling `/my-custom-skill <your request>` will prompt the agent to read and follow these rules.
 
 ## Project Structure
 
@@ -135,14 +198,16 @@ losna-cli/
       session.py        # Session selection and management
       memory.py         # Memory compaction logic
       skills_loader.py  # Dynamic skill loading from project files
+      plugin_manager.py # Remote plugin cloning and package installer
       ui.py             # Terminal UI (spinner, banner, markdown renderer)
   skills/               # Project-level skill definitions (optional)
   install.ps1           # Windows installer
   install.sh            # macOS/Linux installer
   uninstall.ps1         # Windows uninstaller
+  uninstall.sh          # macOS/Linux uninstaller
   pyproject.toml        # Package metadata and dependencies
 ```
 
 ## License
 
-ISC
+Apache License 2.0
