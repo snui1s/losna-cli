@@ -210,4 +210,4 @@ losna-cli/
 
 ## License
 
-Apache License 2.0
+ISC
