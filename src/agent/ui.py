@@ -121,7 +121,7 @@ def print_banner(model_name, project_path):
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.1.3{RESET}",
+        f"{LIGHT_BLUE}Losna CLI 0.1.4{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]
@@ -131,6 +131,106 @@ def print_banner(model_name, project_path):
         right_text = text_lines[i] if i < len(text_lines) else ""
         print(f"{visual_logo[i]}   {right_text}")
     print()
+
+    # Trigger update checker in a non-blocking background thread
+    _trigger_async_update_check()
+
+
+def _trigger_async_update_check():
+    """
+    Spawns a background thread to check for updates against the GitHub repository.
+    Never blocks the main program startup.
+    """
+    import threading
+    import urllib.request
+    import os
+    import json
+    from . import skills_loader
+
+    # Colors
+    GREEN = "\033[38;5;120m"
+    GRAY = "\033[38;5;244m"
+    LIGHT_BLUE = "\033[1;38;5;75m"
+    RESET = "\033[0m"
+
+    project_root = skills_loader._project_root()
+    global_dir = os.path.expanduser("~/.losna")
+    cache_file = os.path.join(global_dir, "update_cache.json")
+
+    # If git repo is not cloned (e.g. running in development workspace directly),
+    # use project root for local sha detection.
+    local_git_dir = os.path.join(global_dir, ".git")
+    if not os.path.exists(local_git_dir):
+        local_git_dir = os.path.join(project_root, ".git")
+
+    if not os.path.exists(local_git_dir):
+        return # Skip if not a git repository clone
+
+    def check_github():
+        # 1. Resolve local SHA
+        local_sha = None
+        try:
+            head_path = os.path.join(local_git_dir, "HEAD")
+            with open(head_path, "r") as f:
+                ref = f.read().strip()
+            if ref.startswith("ref:"):
+                ref_path = os.path.join(local_git_dir, ref.split(" ")[1])
+                with open(ref_path, "r") as f:
+                    local_sha = f.read().strip()
+            else:
+                local_sha = ref
+        except:
+            return
+
+        if not local_sha:
+            return
+
+        # 2. Resolve remote SHA (cache or network request)
+        now = time.time()
+        cached_sha = None
+        last_check = 0
+
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r") as f:
+                    data = json.load(f)
+                    cached_sha = data.get("remote_sha")
+                    last_check = data.get("last_check", 0)
+            except:
+                pass
+
+        # Only check GitHub API once every 6 hours to prevent rate limits
+        if now - last_check < 21600 and cached_sha:
+            remote_sha = cached_sha
+        else:
+            try:
+                url = "https://api.github.com/repos/snui1s/losna-cli/commits/main"
+                req = urllib.request.Request(
+                    url, 
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LosnaCLIUpdater"}
+                )
+                with urllib.request.urlopen(req, timeout=3.0) as response:
+                    res_data = json.loads(response.read().decode())
+                    remote_sha = res_data.get("sha")
+                    
+                # Cache the result
+                os.makedirs(global_dir, exist_ok=True)
+                with open(cache_file, "w") as f:
+                    json.dump({"remote_sha": remote_sha, "last_check": now}, f)
+            except:
+                remote_sha = cached_sha
+
+        # 3. Compare and print notification (No prompt, no blocking)
+        if remote_sha and local_sha != remote_sha:
+            print(f"\n  {GREEN}✨ A new version of Losna CLI is available!{RESET}")
+            if os.name == 'nt':
+                print(f"  {GRAY}Run this in PowerShell to update:{RESET}")
+                print(f"  {LIGHT_BLUE}irm https://raw.githubusercontent.com/snui1s/losna-cli/main/install.ps1 | iex{RESET}\n")
+            else:
+                print(f"  {GRAY}Run this in Terminal to update:{RESET}")
+                print(f"  {LIGHT_BLUE}curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/install.sh | bash{RESET}\n")
+
+    threading.Thread(target=check_github, daemon=True).start()
 
 
 def print_agent_response(content: str, duration: float):
