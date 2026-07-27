@@ -103,6 +103,10 @@ def compact_memory(conversation_history, max_active_messages, keep_recent, model
                         saved_count += 1
                 print(f"  [Memory]: Saved {saved_count}/{len(extracted_facts)} new long-term fact(s) (duplicates skipped).")
 
+            # If facts have piled up past the consolidation threshold,
+            # merge them down into a tighter set while we're already here.
+            consolidate_memory(model_name)
+
             # Persist the compaction watermark so reopening this session later
             # skips these already-processed messages instead of re-compacting
             # (and re-billing an LLM call for) the exact same history again.
@@ -120,3 +124,86 @@ def compact_memory(conversation_history, max_active_messages, keep_recent, model
             return recent_messages
             
     return conversation_history
+
+
+# ---------------------------------------------------------------------------
+# Long-term memory consolidation
+# ---------------------------------------------------------------------------
+
+CONSOLIDATION_THRESHOLD = 40   # trigger when total facts exceed this
+CONSOLIDATION_TARGET    = 20   # merge down to at most this many
+
+CONSOLIDATION_PROMPT = """\
+You are a memory-management system. Below is a list of {count} facts previously \
+learned about the user across multiple conversations.
+
+Your job is to produce a SHORTER, HIGHER-QUALITY list of at most {target} facts by applying these rules:
+
+1. **Merge** facts that talk about the same topic into one richer sentence.
+   Example: "User likes React" + "User uses React with TypeScript" → "User uses React with TypeScript"
+2. **Supersede**: When a newer fact contradicts an older one, keep ONLY the newer version.
+   Example: "User likes React" + "User switched from React to Vue" → "User switched from React to Vue"
+3. **Deduplicate**: Drop facts that are near-identical in meaning, keeping the more detailed one.
+4. **Preserve breadth**: Do not over-merge unrelated facts. Each output fact should cover one coherent topic.
+5. **Keep it factual**: Do not invent new information. Only combine or prune what is given.
+
+Return ONLY a JSON array of plain-text strings. No objects, no markdown fences, no commentary.
+Example output: ["User's name is Nell", "User works as a DevOps engineer"]
+
+--- FACTS ---
+{facts}
+"""
+
+
+def consolidate_memory(model_name):
+    """Merge and deduplicate long-term facts when they exceed the threshold.
+
+    Calls the LLM once to produce a tighter set, then atomically replaces
+    the old facts in the DB.  Silently skips if the count is still below
+    the threshold or if the LLM call fails (non-critical path)."""
+    total = db.count_memory()
+    if total <= CONSOLIDATION_THRESHOLD:
+        return
+
+    all_facts = db.load_all_memory(limit=total)  # uncapped load for consolidation
+    numbered = "\n".join(f"{i+1}. {f}" for i, f in enumerate(all_facts))
+
+    prompt = CONSOLIDATION_PROMPT.format(
+        count=len(all_facts),
+        target=CONSOLIDATION_TARGET,
+        facts=numbered,
+    )
+
+    try:
+        print(f"  [Memory]: {total} facts exceed threshold ({CONSOLIDATION_THRESHOLD}). Consolidating...")
+        consolidation_start = time.time()
+
+        from . import config
+        with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
+            response = client.chat.send(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if the model wraps its answer
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:].strip()
+
+        consolidated = json.loads(raw)
+        if not isinstance(consolidated, list) or len(consolidated) == 0:
+            print("  [Memory]: Consolidation returned invalid data. Skipping.")
+            return
+
+        # Safety: cap at target to prevent model from ignoring the instruction
+        consolidated = [str(f).strip() for f in consolidated if str(f).strip()][:CONSOLIDATION_TARGET]
+
+        db.replace_all_memory(consolidated)
+        duration = time.time() - consolidation_start
+        print(f"  [Memory]: Consolidated {total} → {len(consolidated)} facts in {duration:.2f}s.")
+
+    except Exception as e:
+        # Consolidation is best-effort; never block the main flow
+        print(f"  [Memory]: Consolidation failed ({e}). Will retry next cycle.")

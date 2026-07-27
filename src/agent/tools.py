@@ -136,15 +136,31 @@ def list_directory(folder_path="."):
         if not items:
             return "Directory is empty."
 
-        if len(items) > 200:
-            head = items[:120]
-            tail = items[-80:]
-            omitted = len(items) - 200
+        formatted_items = []
+        for item in items:
+            item_path = os.path.join(target_path, item)
+            try:
+                if os.path.isdir(item_path):
+                    formatted_items.append(f"- [DIR]  {item}/")
+                else:
+                    size = os.path.getsize(item_path)
+                    if size >= 1024:
+                        size_str = f"{size / 1024:.1f} KB"
+                    else:
+                        size_str = f"{size} B"
+                    formatted_items.append(f"- [FILE] {item} ({size_str})")
+            except Exception:
+                formatted_items.append(f"- {item}")
+
+        if len(formatted_items) > 200:
+            head = formatted_items[:120]
+            tail = formatted_items[-80:]
+            omitted = len(formatted_items) - 200
             shown = head + [f"...[TRUNCATED - {omitted} more items omitted]..."] + tail
         else:
-            shown = items
+            shown = formatted_items
 
-        return f"Contents of {folder_path}:\n" + "\n".join(f"- {item}" for item in shown)
+        return f"Contents of {folder_path}:\n" + "\n".join(shown)
     except Exception as e:
         return f"Error listing directory: {str(e)}"
 
@@ -224,42 +240,7 @@ def edit_local_file(filepath, content, mode="w"):
     except Exception as e:
         return f"Error editing file: {str(e)}"
 
-def get_file_info(filepath):
-    """
-    Retrieve metadata of a file (file size, last modified timestamp).
-    Helps the agent evaluate file size before reading to avoid token overflow.
-    """
-    try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
 
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        # Hard Guardrail: Prevent inspecting files outside the project directory
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Access to files outside the project directory is denied."
-            
-        if not os.path.exists(target_path):
-            return f"Error: File '{filepath}' not found."
-            
-        # Retrieve file stats
-        file_stats = os.stat(target_path)
-        file_size_bytes = file_stats.st_size
-        modified_time = datetime.fromtimestamp(file_stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Format file size unit for readability
-        if file_size_bytes < 1024:
-            size_str = f"{file_size_bytes} Bytes"
-        elif file_size_bytes < 1024 * 1024:
-            size_str = f"{file_size_bytes / 1024:.2f} KB"
-        else:
-            size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB"
-            
-        return f"File Info for '{filepath}':\n- Size: {size_str}\n- Last Modified: {modified_time}"
-        
-    except Exception as e:
-        return f"Error fetching file info: {str(e)}"
 
 def view_file_lines(filepath, start_line=1, end_line=200):
     """
@@ -635,7 +616,7 @@ my_tools = [
         "type": "function",
         "function": {
             "name": "read_local_file",
-            "description": "Read the contents of a local file. Use this when the user asks you to inspect a file, check code, or read logs.",
+            "description": "Read the ENTIRE content of SMALL files (< 10 KB / under 300 lines). Do NOT use for large files or logs — use 'view_file_lines' instead to save tokens.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -728,28 +709,12 @@ my_tools = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_file_info",
-            "description": "Get file metadata such as size and last modified timestamp. Use this to check file size before reading it to avoid token overflow.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {
-                        "type": "string",
-                        "description": "The exact path to the file (e.g., 'main.py', 'README.md')."
-                    }
-                },
-                "required": ["filepath"]
-            }
-        }
-    },
+
     {
         "type": "function",
         "function": {
             "name": "view_file_lines",
-            "description": "reads a range of lines, defaulting to 150 lines if not specified, Acts like head/tail commands. Highly recommended for inspecting portions of large files or logs to save token usage.",
+            "description": "Read a specific line range from LARGE files (> 10 KB) or when inspecting specific functions/sections. Essential for saving tokens on big files.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -967,12 +932,7 @@ def dispatch_tool(func_name, args):
             tool_end_time = time.time()
             print(f"  [Tool]: edit_local_file('{filepath}', mode='{mode}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
             
-        elif func_name == "get_file_info":
-            filepath = args.get("filepath", "")
-            tool_result = get_file_info(filepath)
-            tool_end_time = time.time()
-            print(f"  [Tool]: get_file_info('{filepath}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
-            
+
         elif func_name == "view_file_lines":
             filepath = args.get("filepath", "")
             start = args.get("start_line", 1)

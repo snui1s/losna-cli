@@ -94,6 +94,14 @@ def init_db():
     if "last_summary" not in session_columns:
         cur.execute("ALTER TABLE sessions ADD COLUMN last_summary TEXT")
 
+    # --- Migration: add LRU tracking column to memory ---
+    cur.execute("PRAGMA table_info(memory)")
+    memory_columns = {row["name"] for row in cur.fetchall()}
+    if "last_used_at" not in memory_columns:
+        cur.execute("ALTER TABLE memory ADD COLUMN last_used_at TEXT")
+        # Back-fill existing rows so they sort sensibly from day one
+        cur.execute("UPDATE memory SET last_used_at = extracted_at WHERE last_used_at IS NULL")
+
     conn.commit()
     conn.close()
 
@@ -239,24 +247,73 @@ def fact_exists(fact_text, similarity_threshold=0.85):
 
 def save_memory_fact(fact_text, source_session_id=None):
     """Store one extracted long-term fact."""
+    now = datetime.now().isoformat()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO memory (fact_text, source_session_id, extracted_at) VALUES (?, ?, ?)",
-        (fact_text, source_session_id, datetime.now().isoformat())
+        "INSERT INTO memory (fact_text, source_session_id, extracted_at, last_used_at) VALUES (?, ?, ?, ?)",
+        (fact_text, source_session_id, now, now)
     )
     conn.commit()
     conn.close()
 
 
-def load_all_memory():
-    """Load every long-term fact across all sessions - used to build the system prompt."""
+MEMORY_FACT_LIMIT = 30  # max facts injected into the system prompt
+
+
+def load_all_memory(limit=MEMORY_FACT_LIMIT):
+    """Load the most recently-used long-term facts, capped at *limit*.
+
+    Each loaded fact gets its ``last_used_at`` timestamp refreshed so that
+    actively-relevant facts stay in the hot set while stale ones naturally
+    fall off (LRU eviction).  Facts are never deleted - they remain in the
+    DB for potential future retrieval or consolidation."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT fact_text FROM memory ORDER BY id ASC")
+    cur.execute(
+        "SELECT id, fact_text FROM memory ORDER BY last_used_at DESC LIMIT ?",
+        (limit,)
+    )
     rows = cur.fetchall()
+
+    # Refresh last_used_at so frequently-needed facts stay hot
+    if rows:
+        now = datetime.now().isoformat()
+        cur.executemany(
+            "UPDATE memory SET last_used_at = ? WHERE id = ?",
+            [(now, row["id"]) for row in rows]
+        )
+        conn.commit()
+
     conn.close()
     return [row["fact_text"] for row in rows]
+
+
+def count_memory():
+    """Return the total number of long-term facts stored."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS cnt FROM memory")
+    count = cur.fetchone()["cnt"]
+    conn.close()
+    return count
+
+
+def replace_all_memory(new_facts):
+    """Atomically replace every fact with a consolidated set.
+
+    Used by the consolidation routine to swap N stale/redundant facts
+    with a smaller, LLM-merged set in a single transaction."""
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM memory")
+    cur.executemany(
+        "INSERT INTO memory (fact_text, source_session_id, extracted_at, last_used_at) VALUES (?, NULL, ?, ?)",
+        [(fact, now, now) for fact in new_facts]
+    )
+    conn.commit()
+    conn.close()
 
 
 def archive_messages(session_id, messages):
