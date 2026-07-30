@@ -87,8 +87,16 @@ def main():
                 archived_count, last_summary = db.get_compaction_state(current_session_id)
                 loaded = db.load_messages(current_session_id, skip=archived_count)
                 SYSTEM_PROMPT = prompts.build_system_prompt()
+                pinned_facts = db.load_pinned_memory()
+                memory_sections = []
+                if pinned_facts:
+                    pinned_block = "\n".join(f"- {f}" for f in pinned_facts)
+                    memory_sections.append(f"[Core Memory / Pinned Facts]:\n{pinned_block}")
                 if last_summary:
-                    SYSTEM_PROMPT += f"\n\n[Previous Context Summary]: {last_summary}"
+                    memory_sections.append(f"[Previous Context Summary]: {last_summary}")
+                if memory_sections:
+                    SYSTEM_PROMPT += "\n\n" + "\n\n".join(memory_sections)
+
                 if not loaded or loaded[0].get("role") != "system":
                     loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
                 else:
@@ -112,8 +120,15 @@ def main():
                         archived_count, last_summary = db.get_compaction_state(current_session_id)
                         loaded = db.load_messages(current_session_id, skip=archived_count)
                         SYSTEM_PROMPT = prompts.build_system_prompt()
+                        pinned_facts = db.load_pinned_memory()
+                        memory_sections = []
+                        if pinned_facts:
+                            pinned_block = "\n".join(f"- {f}" for f in pinned_facts)
+                            memory_sections.append(f"[Core Memory / Pinned Facts]:\n{pinned_block}")
                         if last_summary:
-                            SYSTEM_PROMPT += f"\n\n[Previous Context Summary]: {last_summary}"
+                            memory_sections.append(f"[Previous Context Summary]: {last_summary}")
+                        if memory_sections:
+                            SYSTEM_PROMPT += "\n\n" + "\n\n".join(memory_sections)
                         if not loaded or loaded[0].get("role") != "system":
                             loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
                         else:
@@ -126,6 +141,10 @@ def main():
                         db.delete_session(target_id)
                         current_session_id = db.create_session("New Chat")
                         SYSTEM_PROMPT = prompts.build_system_prompt()
+                        pinned_facts = db.load_pinned_memory()
+                        if pinned_facts:
+                            pinned_block = "\n".join(f"- {f}" for f in pinned_facts)
+                            SYSTEM_PROMPT += f"\n\n[Core Memory / Pinned Facts]:\n{pinned_block}"
                         conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
                         print(f"Deleted final session. Created and switched to a fresh session [{current_session_id}] 'New Chat'\n")
                 else:
