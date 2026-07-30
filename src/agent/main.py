@@ -86,9 +86,8 @@ def main():
                 current_session_id = int(target)
                 archived_count, last_summary = db.get_compaction_state(current_session_id)
                 loaded = db.load_messages(current_session_id, skip=archived_count)
-                SYSTEM_PROMPT = prompts.build_system_prompt()
-                if last_summary:
-                    SYSTEM_PROMPT += f"\n\n[Previous Context Summary]: {last_summary}"
+                SYSTEM_PROMPT = prompts.build_system_prompt(previous_summary=last_summary)
+
                 if not loaded or loaded[0].get("role") != "system":
                     loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
                 else:
@@ -111,9 +110,7 @@ def main():
                         current_session_id = new_session["id"]
                         archived_count, last_summary = db.get_compaction_state(current_session_id)
                         loaded = db.load_messages(current_session_id, skip=archived_count)
-                        SYSTEM_PROMPT = prompts.build_system_prompt()
-                        if last_summary:
-                            SYSTEM_PROMPT += f"\n\n[Previous Context Summary]: {last_summary}"
+                        SYSTEM_PROMPT = prompts.build_system_prompt(previous_summary=last_summary)
                         if not loaded or loaded[0].get("role") != "system":
                             loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
                         else:
@@ -454,6 +451,12 @@ def main():
                         db.save_message(current_session_id, "assistant", answer)
                         break 
                     
+            except KeyboardInterrupt:
+                RED = "\033[1;31m"
+                RESET = "\033[0m"
+                print(f"\n{RED}  [System]: Operation canceled by user (Esc pressed).{RESET}\n")
+                conversation_history = list(safe_history_backup)
+                break
             except Exception as e:
                 attempt += 1
                 print(f"  [Error]: {e}")

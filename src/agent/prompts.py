@@ -14,28 +14,69 @@ CRITICAL OPERATIONAL GUIDELINES:
 
 NOTE: Operating System: {platform.system()} ({os.name}). Use appropriate shell syntax."""
 
-def build_system_prompt():
-    """Assemble the full system prompt in this order (stable content first, for
-    prompt-caching friendliness):
-      1. Base persona + operational rules (static)
-      2. Project README (static, changes rarely)
-      3. Available skills list (static, changes rarely)
-      4. Long-term memory facts (grows over time, least stable of the four)
+
+def build_system_message(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None, use_cache_control=False):
     """
-    prompt = BASE_SYSTEM_PROMPT
+    Builds system message payload structured for OpenRouter Prompt Caching.
+    Static components (Persona, README, Skills List, Pinned Core Memory, Invoked Skill)
+    are ordered first to maximize OpenRouter automatic prefix cache hits.
+    Optionally applies explicit cache_control blocks for Anthropic/Claude models.
+    """
+    static_parts = [BASE_SYSTEM_PROMPT]
 
     readme = skills_loader.load_readme()
     if readme:
-        prompt += f"\n\nPROJECT README:\n{readme}"
+        static_parts.append(f"PROJECT README:\n{readme}")
 
     skills_block = skills_loader.build_skills_prompt_block()
     if skills_block:
-        prompt += skills_block
+        static_parts.append(skills_block.strip())
 
-    facts = db.load_all_memory()
-    if facts:
-        memory_block = "\n\nLONG-TERM MEMORY (facts learned about the user from past conversations):\n"
-        memory_block += "\n".join(f"- {fact}" for fact in facts)
-        prompt += memory_block
+    pinned_facts = db.load_pinned_memory()
+    if pinned_facts:
+        pinned_block = "[Core Memory / Pinned Facts]:\n" + "\n".join(f"- {f}" for f in pinned_facts)
+        static_parts.append(pinned_block)
 
-    return prompt
+    if invoked_skill_prompt:
+        static_parts.append(invoked_skill_prompt.strip())
+
+    static_text = "\n\n".join(p for p in static_parts if p)
+
+    dynamic_parts = []
+    if previous_summary:
+        dynamic_parts.append(f"[Previous Context Summary]: {previous_summary}")
+
+    if relevant_facts:
+        facts_block = "[Relevant Dynamic Facts]:\n" + "\n".join(f"- {f}" for f in relevant_facts)
+        dynamic_parts.append(facts_block)
+
+    dynamic_text = "\n\n".join(p for p in dynamic_parts if p)
+
+    if use_cache_control:
+        content = [
+            {
+                "type": "text",
+                "text": static_text,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+        if dynamic_text:
+            content.append({
+                "type": "text",
+                "text": dynamic_text
+            })
+        return {"role": "system", "content": content}
+    else:
+        full_text = f"{static_text}\n\n{dynamic_text}".strip() if dynamic_text else static_text
+        return {"role": "system", "content": full_text}
+
+
+def build_system_prompt(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None):
+    """Backward-compatible helper returning plain system prompt string."""
+    msg = build_system_message(
+        invoked_skill_prompt=invoked_skill_prompt,
+        previous_summary=previous_summary,
+        relevant_facts=relevant_facts,
+        use_cache_control=False
+    )
+    return msg["content"]

@@ -6,6 +6,8 @@ from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.styles import Style
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
+import os
+
 class SlashCompleter(Completer):
     """Only suggests completions when input starts with '/'."""
     def __init__(self, commands):
@@ -31,19 +33,41 @@ class Spinner:
 
     def _spin(self):
         idx = 0
-        # Traveling wave: builds up, peak shifts, trails off, then resets
         frames = [" .", " . -", " . - *", " *", " * -", " * - .", ""]
         max_len = max(len(f) for f in frames)
+
+        # ANSI Colors for Esc prompt
+        RED = "\033[1;31m"
+        GRAY = "\033[38;5;244m"
+        RESET = "\033[0m"
+        esc_hint = f" {GRAY}({RED}Press [Esc] to cancel{GRAY}){RESET}"
+
         while not self.stop_event.is_set():
+            # Check for Esc key press on Windows
+            if os.name == 'nt':
+                try:
+                    import msvcrt
+                    if msvcrt.kbhit():
+                        ch = msvcrt.getch()
+                        if ch in (b'\x1b', b'\x03'):  # ESC key or Ctrl+C
+                            import _thread
+                            self.stop_event.set()
+                            sys.stdout.write("\r" + " " * 80 + "\r")
+                            sys.stdout.flush()
+                            _thread.interrupt_main()
+                            break
+                except Exception:
+                    pass
+
             char = self.spinner_chars[idx % len(self.spinner_chars)]
             frame = frames[idx % len(frames)]
             pad = " " * (max_len - len(frame))
-            sys.stdout.write(f"\r  [{char}] {self.message}{frame}{pad} ")
+            sys.stdout.write(f"\r  [{char}] {self.message}{frame}{pad}{esc_hint} ")
             sys.stdout.flush()
             idx += 1
             self.stop_event.wait(0.25)
         # Clean up line
-        sys.stdout.write("\r" + " " * 50 + "\r")
+        sys.stdout.write("\r" + " " * 80 + "\r")
         sys.stdout.flush()
 
     def start(self):
@@ -55,7 +79,10 @@ class Spinner:
     def stop(self):
         self.stop_event.set()
         if self.thread:
-            self.thread.join()
+            try:
+                self.thread.join(timeout=0.5)
+            except Exception:
+                pass
 
 # Custom styles for the CLI prompt and autocomplete dropdown menu
 custom_style = Style.from_dict({
@@ -121,7 +148,7 @@ def print_banner(model_name, project_path):
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.1.4{RESET}",
+        f"{LIGHT_BLUE}Losna CLI 0.1.5{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]
@@ -236,16 +263,16 @@ def _trigger_async_update_check():
 def print_agent_response(content: str, duration: float):
     """
     Renders the agent's markdown response beautifully using rich.
-    Includes an elegant header box and handles syntaxes/tables nicely.
+    Includes an elegant rounded header box and handles syntax/tables cleanly.
+    Single-pass rendering eliminates ANSI redraw artifacts on terminal resizes.
     """
     from rich.console import Console
     from rich.markdown import Markdown
     from rich.panel import Panel
     from rich.theme import Theme
-    from rich.live import Live
+    from rich import box
 
     # Define custom styling theme for Markdown elements
-    # Using gold/yellow tones for headings, blockquotes, and dividers instead of dark purple
     custom_theme = Theme({
         "markdown.h1": "bold color(220)",      # Bright Gold
         "markdown.h2": "bold color(214)",      # Amber / Orange-yellow
@@ -254,48 +281,24 @@ def print_agent_response(content: str, duration: float):
         "markdown.h5": "bold color(184)",
         "markdown.h6": "bold color(184)",
         "markdown.item.bullet": "color(220)",  # Gold bullets
-        "markdown.block": "color(220)",        # This controls the vertical border bar color of blockquote (Gold)
-        "markdown.blockquote": "color(186)",   # Controls the quote block text wrapper (Soft yellow)
-        "markdown.paragraph": "color(253)",    # Default body paragraph text (Soft white)
-        "markdown.hr": "color(214)",           # Horizontal rule divider line in Amber/Gold
+        "markdown.block": "color(220)",        # Vertical border bar of blockquote
+        "markdown.blockquote": "color(186)",   # Controls quote block text
+        "markdown.paragraph": "color(253)",    # Default body paragraph text
+        "markdown.hr": "color(214)",           # Horizontal rule divider line
     })
 
-    # The console MUST be initialized with this theme, and used throughout
     console = Console(theme=custom_theme)
-    
     console.print()
-    
-    # We gradually construct the text by characters (or words) to render dynamically
-    words = content.split(" ")
-    current_text = ""
-    
-    # Helper to generate Markdown instances that automatically read our console's styles
-    def get_md(text: str) -> Markdown:
-        return Markdown(text)
-    
-    # Create the Live container using a panel with initially empty markdown
-    # Pass the themed console so it inherits styles correctly
+
+    md = Markdown(content)
     panel = Panel(
-        get_md(current_text),
-        title=f"[bold yellow]Agent (took {duration:.2f}s)[/bold yellow]",
+        md,
+        title=f"[bold color(141)]Agent (took {duration:.2f}s)[/bold color(141)]",
         title_align="left",
-        border_style="bold color(214)",        # Change frame border from cyan to bold amber/yellow
+        border_style="color(97)",              # Soft cosmic purple border
+        box=box.ROUNDED,
         padding=(1, 2)
     )
-    
-    with Live(panel, console=console, refresh_per_second=20, transient=False) as live:
-        # Dynamically build up the response
-        i = 0
-        step = max(1, len(words) // 250)  # Adjust chunk size so long responses don't type too slowly
-        while i < len(words):
-            current_text = " ".join(words[:i+step])
-            panel.renderable = get_md(current_text)
-            live.update(panel)
-            i += step
-            time.sleep(0.015)
-        
-        # Ensure the final render shows the 100% complete content
-        panel.renderable = get_md(content)
-        live.update(panel)
-        
+
+    console.print(panel)
     console.print()

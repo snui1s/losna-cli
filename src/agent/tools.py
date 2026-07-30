@@ -844,13 +844,13 @@ my_tools = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for current, up-to-date, or real-time information (news, recent events, prices, documentation, facts you're unsure about, or anything that may have changed after your training data). Use this whenever the user asks about something time-sensitive or when you're not confident your internal knowledge is current.",
+            "description": "Search the web for current, up-to-date, or real-time information (news, recent events, prices, documentation, benchmarks). Formulate a single comprehensive query covering key dimensions in 1-2 calls max.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search query. Be specific and concise (e.g. 'Python 3.13 release date' rather than a full sentence question)."
+                        "description": "The search query. Formulate a comprehensive query that covers all key aspects (e.g. 'DeepSeek V4 vs GPT-4o mini benchmarks pricing 2026') to avoid redundant multi-turn searching."
                     },
                     "max_results": {
                         "type": "integer",
