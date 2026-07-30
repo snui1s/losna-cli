@@ -278,6 +278,74 @@ class TestCompactMemory:
             assert len(result) == 3
             assert result[0]["content"] == "Response 13"
 
+    def test_compaction_passes_session_id_to_load_relevant_memory(self, sample_history):
+        """Compaction passes session_id to load_relevant_memory to isolate session memory."""
+        mock_raw_response = (
+            "SUMMARY: Session 42 chat.\n"
+            "FACTS: []"
+        )
+
+        with (
+            patch("src.agent.memory.OpenRouter") as mock_openrouter,
+            patch("src.agent.memory.db") as mock_db,
+        ):
+            mock_client = MagicMock()
+            mock_openrouter.return_value.__enter__.return_value = mock_client
+            mock_response = MagicMock()
+            mock_response.choices[0].message.content = mock_raw_response
+            mock_client.chat.send.return_value = mock_response
+
+            mock_db.get_compaction_state.return_value = (0, "")
+            mock_db.load_pinned_memory.return_value = []
+            mock_db.load_relevant_memory.return_value = []
+
+            compact_memory(
+                conversation_history=sample_history,
+                max_active_messages=5,
+                keep_recent=3,
+                model_name="test-model",
+                system_prompt="You are a helpful assistant.",
+                session_id=42,
+            )
+
+            mock_db.load_relevant_memory.assert_called_once_with("Response 14", session_id=42)
+
+    def test_prompt_caching_system_message_structure(self):
+        """Test build_system_message orders static blocks first and supports cache_control."""
+        from src.agent.prompts import build_system_message
+
+        with patch("src.agent.prompts.db") as mock_db, patch("src.agent.prompts.skills_loader") as mock_skills:
+            mock_skills.load_readme.return_value = "Test README content"
+            mock_skills.build_skills_prompt_block.return_value = "\nAVAILABLE SKILLS:\n- test_skill"
+            mock_db.load_pinned_memory.return_value = ["User name is Arm"]
+
+            # Test string version (static-first ordering)
+            msg_str = build_system_message(
+                invoked_skill_prompt="[Invoked Skill Instructions: test]",
+                previous_summary="User asked for help",
+                relevant_facts=["User uses Python"],
+                use_cache_control=False
+            )
+            content = msg_str["content"]
+            assert "You are an intelligent" in content
+            assert content.find("PROJECT README:") < content.find("[Core Memory / Pinned Facts]:")
+            assert content.find("[Core Memory / Pinned Facts]:") < content.find("[Invoked Skill Instructions: test]")
+            assert content.find("[Invoked Skill Instructions: test]") < content.find("[Previous Context Summary]:")
+            assert content.find("[Previous Context Summary]:") < content.find("[Relevant Dynamic Facts]:")
+
+            # Test structured cache_control version for Anthropic/Claude
+            msg_cache = build_system_message(
+                invoked_skill_prompt="[Invoked Skill Instructions: test]",
+                previous_summary="User asked for help",
+                relevant_facts=["User uses Python"],
+                use_cache_control=True
+            )
+            blocks = msg_cache["content"]
+            assert isinstance(blocks, list)
+            assert len(blocks) == 2
+            assert "cache_control" in blocks[0]
+            assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+
 
 if __name__ == "__main__":
     import sys

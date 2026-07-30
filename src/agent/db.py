@@ -432,15 +432,24 @@ def _recency_score(last_used_iso, now):
 
 
 def load_relevant_memory(current_message, limit=MEMORY_FACT_LIMIT,
-                         alpha=ALPHA_RECENCY, beta=BETA_SIMILARITY):
+                         alpha=ALPHA_RECENCY, beta=BETA_SIMILARITY,
+                         session_id=None):
     """
     Hybrid retrieval for unpinned dynamic memory facts: score = alpha * recency + beta * cosine_similarity.
+    Filters unpinned facts by session_id when provided, isolating session memories.
     Pinned facts are excluded here since they are loaded separately via load_pinned_memory().
     """
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id, fact_text, embedding, last_used_at FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL)")
+        if session_id is not None:
+            cur.execute(
+                "SELECT id, fact_text, embedding, last_used_at FROM memory "
+                "WHERE (is_pinned = 0 OR is_pinned IS NULL) AND (source_session_id = ? OR source_session_id IS NULL)",
+                (session_id,)
+            )
+        else:
+            cur.execute("SELECT id, fact_text, embedding, last_used_at FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL)")
         rows = cur.fetchall()
 
         if not rows:
@@ -482,12 +491,20 @@ def load_relevant_memory(current_message, limit=MEMORY_FACT_LIMIT,
         conn.close()
 
 
-def load_all_memory(limit=MEMORY_FACT_LIMIT):
-    """Backward-compat fallback: top N unpinned facts by last_used_at."""
+def load_all_memory(limit=MEMORY_FACT_LIMIT, session_id=None):
+    """Backward-compat fallback: top N unpinned facts by last_used_at (scoped to session_id if provided)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id, fact_text FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL) ORDER BY last_used_at DESC LIMIT ?", (limit,))
+        if session_id is not None:
+            cur.execute(
+                "SELECT id, fact_text FROM memory "
+                "WHERE (is_pinned = 0 OR is_pinned IS NULL) AND (source_session_id = ? OR source_session_id IS NULL) "
+                "ORDER BY last_used_at DESC LIMIT ?",
+                (session_id, limit)
+            )
+        else:
+            cur.execute("SELECT id, fact_text FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL) ORDER BY last_used_at DESC LIMIT ?", (limit,))
         rows = cur.fetchall()
 
         if rows:
@@ -507,12 +524,20 @@ def load_all_memory(limit=MEMORY_FACT_LIMIT):
         conn.close()
 
 
-def load_all_memory_with_ids(limit=MEMORY_FACT_LIMIT):
-    """Fetch top N unpinned facts along with their database IDs [(id, fact_text), ...] for targeted consolidation."""
+def load_all_memory_with_ids(limit=MEMORY_FACT_LIMIT, session_id=None):
+    """Fetch top N unpinned facts along with database IDs [(id, fact_text), ...] (scoped to session_id if provided)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id, fact_text FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL) ORDER BY last_used_at DESC LIMIT ?", (limit,))
+        if session_id is not None:
+            cur.execute(
+                "SELECT id, fact_text FROM memory "
+                "WHERE (is_pinned = 0 OR is_pinned IS NULL) AND (source_session_id = ? OR source_session_id IS NULL) "
+                "ORDER BY last_used_at DESC LIMIT ?",
+                (session_id, limit)
+            )
+        else:
+            cur.execute("SELECT id, fact_text FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL) ORDER BY last_used_at DESC LIMIT ?", (limit,))
         rows = cur.fetchall()
 
         if rows:
@@ -532,13 +557,19 @@ def load_all_memory_with_ids(limit=MEMORY_FACT_LIMIT):
         conn.close()
 
 
-def count_memory(include_pinned=True):
-    """Total number of long-term facts in the DB (optionally filtering out pinned Core Memory)."""
+def count_memory(include_pinned=True, session_id=None):
+    """Total number of long-term facts in the DB (optionally filtering by session_id)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
         if include_pinned:
             cur.execute("SELECT COUNT(*) AS cnt FROM memory")
+        elif session_id is not None:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM memory "
+                "WHERE (is_pinned = 0 OR is_pinned IS NULL) AND (source_session_id = ? OR source_session_id IS NULL)",
+                (session_id,)
+            )
         else:
             cur.execute("SELECT COUNT(*) AS cnt FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL)")
         return cur.fetchone()["cnt"]
@@ -546,7 +577,7 @@ def count_memory(include_pinned=True):
         conn.close()
 
 
-def replace_all_memory(new_facts, target_ids=None, min_retention_ratio=0.5):
+def replace_all_memory(new_facts, target_ids=None, min_retention_ratio=0.5, source_session_id=None):
     """
     Safely swap unpinned facts with a consolidated set.
     Pinned facts are strictly protected and will never be deleted by consolidation.
@@ -596,19 +627,19 @@ def replace_all_memory(new_facts, target_ids=None, min_retention_ratio=0.5):
         else:
             cur.execute("DELETE FROM memory WHERE (is_pinned = 0 OR is_pinned IS NULL)")
 
-        # 3. Re-embed and insert new consolidated facts (as unpinned)
+        # 3. Re-embed and insert new consolidated facts (as unpinned, tied to source_session_id if provided)
         try:
             vectors = embed_passages_batch(new_facts)
             cur.executemany(
                 "INSERT INTO memory (fact_text, embedding, source_session_id, extracted_at, last_used_at, is_pinned) "
-                "VALUES (?, ?, NULL, ?, ?, 0)",
-                [(f, vector_to_json(v), now, now) for f, v in zip(new_facts, vectors)],
+                "VALUES (?, ?, ?, ?, ?, 0)",
+                [(f, vector_to_json(v), source_session_id, now, now) for f, v in zip(new_facts, vectors)],
             )
         except Exception:
             cur.executemany(
                 "INSERT INTO memory (fact_text, embedding, source_session_id, extracted_at, last_used_at, is_pinned) "
-                "VALUES (?, NULL, NULL, ?, ?, 0)",
-                [(f, now, now) for f in new_facts],
+                "VALUES (?, NULL, ?, ?, ?, 0)",
+                [(f, source_session_id, now, now) for f in new_facts],
             )
 
         conn.commit()

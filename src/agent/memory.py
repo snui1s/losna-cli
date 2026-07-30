@@ -153,29 +153,24 @@ def compact_memory(conversation_history, max_active_messages, keep_recent, model
                 print(f"  [Memory]: LLM Actions -> Saved: {saved}, Superseded: {superseded}, Skipped: {skipped} (Auto-Pinned: {pinned_cnt})")
 
             # Trigger background consolidation if threshold crossed
-            consolidate_memory(model_name)
+            consolidate_memory(model_name, session_id=session_id)
 
             prev_archived_count, _ = db.get_compaction_state(session_id)
             db.update_compaction_state(session_id, prev_archived_count + newly_archived_count, compacted_summary)
             
-            # Fetch active Pinned Core Memory + Hybrid Relevant Facts for last user query
+            # Fetch active Hybrid Relevant Facts for last user query
             last_user_msg = conversation_history[-1].get("content", "") if conversation_history else ""
-            pinned_facts = db.load_pinned_memory()
-            relevant_facts = db.load_relevant_memory(last_user_msg)
+            relevant_facts = db.load_relevant_memory(last_user_msg, session_id=session_id)
 
-            memory_sections = []
-            if pinned_facts:
-                pinned_block = "\n".join(f"- {f}" for f in pinned_facts)
-                memory_sections.append(f"[Core Memory / Pinned Facts]:\n{pinned_block}")
-            if relevant_facts:
-                facts_block = "\n".join(f"- {f}" for f in relevant_facts)
-                memory_sections.append(f"[Relevant Dynamic Facts]:\n{facts_block}")
+            from . import prompts
+            use_cache = bool(model_name and ("anthropic" in model_name.lower() or "claude" in model_name.lower()))
+            system_msg = prompts.build_system_message(
+                previous_summary=compacted_summary,
+                relevant_facts=relevant_facts,
+                use_cache_control=use_cache
+            )
 
-            memory_ctx = ("\n\n" + "\n\n".join(memory_sections)) if memory_sections else ""
-
-            updated_history = [
-                {"role": "system", "content": f"{system_prompt}\n\n[Previous Context Summary]: {compacted_summary}{memory_ctx}"}
-            ] + recent_messages
+            updated_history = [system_msg] + recent_messages
             print(f"  [System]: Compaction complete in {compaction_duration:.2f}s. Context compressed.\n")
             return updated_history
             
@@ -213,17 +208,17 @@ Example output: ["User's name is Nell", "User works as a DevOps engineer"]
 """
 
 
-def consolidate_memory(model_name):
+def consolidate_memory(model_name, session_id=None):
     """Merge and deduplicate long-term facts when unpinned facts exceed the threshold."""
     try:
-        total = int(db.count_memory(include_pinned=False))
+        total = int(db.count_memory(include_pinned=False, session_id=session_id))
     except Exception:
         total = 0
 
     if total <= CONSOLIDATION_THRESHOLD:
         return
 
-    facts_with_ids = db.load_all_memory_with_ids(limit=total)
+    facts_with_ids = db.load_all_memory_with_ids(limit=total, session_id=session_id)
     if not facts_with_ids:
         return
 
@@ -257,7 +252,7 @@ def consolidate_memory(model_name):
 
         consolidated = [str(f).strip() for f in consolidated if str(f).strip()][:CONSOLIDATION_TARGET]
 
-        db.replace_all_memory(consolidated, target_ids=target_ids)
+        db.replace_all_memory(consolidated, target_ids=target_ids, source_session_id=session_id)
         duration = time.time() - consolidation_start
         print(f"  [Memory]: Consolidated {total} → {len(consolidated)} unpinned facts in {duration:.2f}s.")
 
