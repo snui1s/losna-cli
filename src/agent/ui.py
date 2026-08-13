@@ -148,7 +148,7 @@ def print_banner(model_name, project_path):
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.2.0{RESET}",
+        f"{LIGHT_BLUE}Losna CLI 0.2.1{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]
