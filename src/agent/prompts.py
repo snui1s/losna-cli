@@ -15,7 +15,7 @@ CRITICAL OPERATIONAL GUIDELINES:
 NOTE: Operating System: {platform.system()} ({os.name}). Use appropriate shell syntax."""
 
 
-def build_system_message(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None, use_cache_control=False):
+def build_system_message(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None, use_cache_control=False, read_only=False):
     """
     Builds system message payload structured for OpenRouter Prompt Caching.
     Static components (Persona, README, Skills List, Pinned Core Memory, Invoked Skill)
@@ -43,6 +43,13 @@ def build_system_message(invoked_skill_prompt=None, previous_summary=None, relev
     static_text = "\n\n".join(p for p in static_parts if p)
 
     dynamic_parts = []
+    if read_only:
+        dynamic_parts.append(
+            "[READ-ONLY MODE ACTIVE]: You are operating in Read-Only Mode. "
+            "You CANNOT edit/modify files, delete files, or execute shell commands. "
+            "Limit all operations strictly to reading, searching, inspecting, and answering questions."
+        )
+
     if previous_summary:
         dynamic_parts.append(f"[Previous Context Summary]: {previous_summary}")
 
@@ -71,12 +78,14 @@ def build_system_message(invoked_skill_prompt=None, previous_summary=None, relev
         return {"role": "system", "content": full_text}
 
 
-def build_system_prompt(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None):
+def build_system_prompt(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None, read_only=False):
     """Backward-compatible helper returning plain system prompt string."""
     msg = build_system_message(
         invoked_skill_prompt=invoked_skill_prompt,
         previous_summary=previous_summary,
         relevant_facts=relevant_facts,
-        use_cache_control=False
+        use_cache_control=False,
+        read_only=read_only
     )
     return msg["content"]
+

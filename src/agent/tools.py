@@ -598,6 +598,35 @@ def web_search(query, max_results=5):
         return f"Error searching web: {str(e)}"
 
 
+def read_web_page(url):
+    """Fetch URL and extract clean text content using trafilatura."""
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return "Error: Invalid URL. URL must start with http:// or https://"
+
+    try:
+        import trafilatura
+
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            return f"Error: Could not fetch web page content from '{url}'."
+
+        extracted = trafilatura.extract(
+            downloaded,
+            include_links=True,
+            include_images=False,
+            output_format="txt"
+        )
+
+        if not extracted or not extracted.strip():
+            return f"Error: No readable text article content could be extracted from '{url}'."
+
+        return truncate_content(extracted.strip(), max_chars=8000)
+    except ImportError:
+        return "Error: 'trafilatura' library is not installed."
+    except Exception as e:
+        return f"Error reading web page '{url}': {str(e)}"
+
+
 # --- Tool Definitions ---
 
 my_tools = [
@@ -861,35 +890,86 @@ my_tools = [
             }
         }
     },
-   {
-    "type": "function",
-    "function": {
-        "name": "read_skill",
-        "description": "Load the full instructions of one or more specialized skills. If multiple skills are relevant to the task, pass them as a comma-separated list in a single call (e.g. 'security-review,code-navigation') instead of calling this tool multiple times.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "skill_name": {
-                    "type": "string",
-                    "description": "One skill name, or multiple comma-separated skill names (e.g. 'security-review,code-navigation'), matching the folder names listed in AVAILABLE SKILLS."
+    {
+        "type": "function",
+        "function": {
+            "name": "read_skill",
+            "description": "Load the full instructions of one or more specialized skills. If multiple skills are relevant to the task, pass them as a comma-separated list in a single call (e.g. 'security-review,code-navigation') instead of calling this tool multiple times.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "One skill name, or multiple comma-separated skill names (e.g. 'security-review,code-navigation'), matching the folder names listed in AVAILABLE SKILLS."
                     }
                 },
-            "required": ["skill_name"]
+                "required": ["skill_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_web_page",
+            "description": "Fetch and extract clean readable text/article content from a specific web page URL (e.g. blog post, documentation, news article). Use this when given a specific HTTP/HTTPS URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The full HTTP or HTTPS URL to read (e.g. 'https://example.com/blog/post')."
+                    }
+                },
+                "required": ["url"]
             }
         }
     }
 ]
 
+READ_ONLY_TOOL_NAMES = {
+    "get_current_time",
+    "read_local_file",
+    "get_stock_price",
+    "list_directory",
+    "search_in_files",
+    "view_file_lines",
+    "web_search",
+    "read_skill",
+    "read_web_page",
+}
 
-def dispatch_tool(func_name, args):
+WRITE_TOOL_NAMES = {
+    "edit_local_file",
+    "replace_in_file",
+    "delete_local_file",
+    "move_or_rename_file",
+    "execute_shell_command",
+    "git_commit_and_push",
+}
+
+
+def get_available_tools(read_only: bool = False):
+    """Return tool schemas. If read_only is True, filter out write/modifying tools."""
+    if not read_only:
+        return my_tools
+    return [t for t in my_tools if t["function"]["name"] in READ_ONLY_TOOL_NAMES]
+
+
+def dispatch_tool(func_name, args, read_only: bool = False):
     """
     Central dispatcher for all agent tools. Handles:
       1. Time measurement (logging how long a tool takes)
       2. Argument unpacking and validation
       3. Confirmation prompts for destructive commands (shell execute, git commit/push)
-      4. Graceful execution error handling
+      4. Read-Only security blocks
+      5. Graceful execution error handling
     Returns the stringified result of the tool run.
     """
+    if read_only and func_name not in READ_ONLY_TOOL_NAMES:
+        msg = f"Error: Tool '{func_name}' is blocked. Read-Only Mode is ACTIVE."
+        print(f"  [Security Block]: {msg}")
+        return msg
+
     tool_start_time = time.time()
     tool_result = ""
 
@@ -989,6 +1069,12 @@ def dispatch_tool(func_name, args):
             tool_result = skills_loader.read_skill(skill_name)
             tool_end_time = time.time()
             print(f"  [Tool]: read_skill('{skill_name}') => [Read {len(str(tool_result))} chars] (took {tool_end_time - tool_start_time:.2f}s)")
+
+        elif func_name == "read_web_page":
+            url = args.get("url", "")
+            tool_result = read_web_page(url)
+            tool_end_time = time.time()
+            print(f"  [Tool]: read_web_page('{url}') => [Read {len(str(tool_result))} chars] (took {tool_end_time - tool_start_time:.2f}s)")
             
         else:
             tool_result = f"Error: Tool '{func_name}' is not recognized."
