@@ -1,113 +1,111 @@
-# Losna CLI
+<div align="center">
 
-A terminal-based AI developer assistant powered by OpenRouter. Losna CLI brings an intelligent coding companion directly into your terminal with multi-session chat management, tool execution, web search, and persistent memory.
+# 🌒 Losna CLI
 
-## Features
+**An All-Around, Deep AI Terminal Assistant for Code Analysis & Security Auditing**
 
-### Core
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![OpenRouter BYOK](https://img.shields.io/badge/API-OpenRouter_BYOK-7B2CBF?style=for-the-badge&logo=openai&logoColor=white)](https://openrouter.ai)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-D4AF37?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#-quick-install)
 
-- **Interactive AI Shell** — Full conversational interface powered by OpenRouter models (defaults to Deepseek V4 Flash). Includes slash command autocompletion, input history suggestions, and styled markdown output with gold-themed headers.
-- **Multi-Session Chat** — Create, switch between, and manage multiple independent chat sessions. Each session maintains its own conversation history stored in a local SQLite database.
-- **Tool Execution** — The AI agent can execute shell commands, read and write files, run tests, and perform file system operations on your behalf within the current working directory.
+[Quick Start](#-quick-install) • [Features](#-key-features) • [Commands](#-slash-commands) • [Plugins](#-skill--plugin-system)
 
-### Intelligence
+</div>
 
-- **Memory Compaction** — Automatically compresses older conversation context when the message history exceeds configurable thresholds, preserving a summary of previous discussions while keeping token costs low.
-- **Skill & Plugin System** — Add markdown instruction files to `./skills/` or install plugins directly from remote repositories via `/plugin`. The agent dynamically loads and follows these instructions.
-- **Web Search** — Optional, agent-driven web search powered by Tavily. The `/search` command instructs the AI to query the web and synthesize results. Tavily API key is only requested when you first use this feature.
+---
 
-### User Experience
+> [!NOTE]
+> **What makes Losna CLI different?**
+> Losna CLI is built for developers, security auditors, and power users who want **raw, deep, untruncated AI responses** directly inside their terminal. Instead of blindly auto-editing your codebase, Losna CLI specializes in **deep code comprehension, architecture inspection, vulnerability detection, and custom skill execution** — giving you 100% control over your API keys (**BYOK**).
 
-- **Styled Terminal Output** — Agent responses are rendered as rich markdown with gold-themed headers, styled blockquotes, and syntax-highlighted code blocks.
-- **Interactive Command Confirmation** — The CLI intercepts dangerous system commands or file deletions, stops the active spinner, and requests confirmation in colorized (`y`/`n`) text to ensure safety.
-- **Live Typewriter Effect** — Responses appear progressively with a typewriter animation for a natural conversational feel.
-- **Dynamic Spinners** — Moon-phase animated spinners display during AI processing and tool execution, with success checkmarks on completion.
+---
 
-## Installation
+## ✨ Key Features
+
+### 🧠 Deep Analysis & BYOK (Bring Your Own Key)
+- **Bring Your Own Key (BYOK)** — Connect directly to OpenRouter & Tavily. Zero token markup, no middleman limits, and total freedom to choose any model (*DeepSeek V4, Claude 3.5, Gemini 2.5, GPT-4o*).
+- **Deep Q&A & Security Auditing** — Built to read large code blocks, analyze architecture, and find security vulnerabilities or logic flaws without truncating long explanations.
+
+### 🛡️ Read-Only Mode (`/readonly`)
+- **Strict Safety Toggle** — Lock the agent into Read-Only mode with `/readonly`. Modifying tools (*file writing, editing, replacing, deleting*) and shell command execution are blocked at both schema and runtime levels — safe for auditing production code.
+- **Interactive Command Interception** — Destructive shell commands trigger explicit colorized `(y/n)` confirmation before running.
+
+### 🔍 Web Article Reader & Live Search
+- **Article Reader (`read_web_page`)** — Powered by `trafilatura` to extract clean text/markdown from blog posts, documentation, and news URLs.
+- **Web Search (`/search`)** — Integrated Tavily web search for real-time documentation, recent news, and online research.
+
+### ⚡ Performance & UX
+- **Multi-Session Chat** — Manage multiple independent chat tabs backed by a local SQLite database (`agent_data.db`).
+- **Memory Compaction** — Automatically summarizes older context when history exceeds thresholds to preserve tokens and keep response times fast.
+- **Skill & Plugin System** — Add markdown instruction files to `./skills/` or install dynamic prompt plugins directly from GitHub via `/plugin add`.
+
+---
+
+## ⚡ Quick Install
 
 ### Prerequisites
-
 - [Git](https://git-scm.com)
 - [Python 3.10+](https://python.org)
 
-### Quick Install
+### Installation Commands
 
 **Windows (PowerShell):**
-
 ```powershell
 irm https://raw.githubusercontent.com/snui1s/losna-cli/main/install.ps1 | iex
 ```
 
 **macOS / Linux:**
-
 ```bash
 curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/install.sh | bash
 ```
 
-After installation, **restart your terminal** and run:
-
-```
+After installation, **restart your terminal** and launch:
+```bash
 losna
 ```
 
-### What the installer does
+<details>
+<summary><b>🔍 What the installer does under the hood</b></summary>
 
-1. Clones this repository to `~/.losna/`
+1. Clones this repository into `~/.losna/`
 2. Creates an isolated Python virtual environment inside `~/.losna/.venv/`
 3. Installs all required dependencies automatically
-4. Registers the `losna` command on your system PATH
+4. Registers the `losna` command on your system `PATH`
 
-No global Python packages are modified. Everything is self-contained inside `~/.losna/`.
+*No global Python packages are modified. Everything is self-contained inside `~/.losna/`.*
+</details>
 
-### Updating
+<details>
+<summary><b>🗑️ Updating & Uninstalling</b></summary>
 
-Run the same install command again. The installer detects the existing installation, pulls the latest changes from GitHub, and updates dependencies automatically.
+**Updating:** Re-run the quick install command. The installer detects existing installations and pulls the latest updates.
 
-### Uninstalling
-
-**Windows (PowerShell):**
-
+**Uninstalling (Windows PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.ps1 | iex
 ```
 
-**macOS / Linux:**
-
+**Uninstalling (macOS / Linux):**
 ```bash
 curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.sh | bash
 ```
+</details>
 
-**Manual removal:**
+---
 
-```powershell
-# Windows
-Remove-Item -Recurse -Force "$env:USERPROFILE\.losna"
+## 🔑 Initial Setup
 
-# macOS / Linux
-rm -rf ~/.losna ~/.local/bin/losna
-```
+On first launch, Losna CLI prompts for configuration:
 
-## Setup
+1. **OpenRouter API Key** *(required)* — Connects to AI models via OpenRouter. Get one at [openrouter.ai](https://openrouter.ai).
+2. **Web Search** *(optional)* — Enable web search using a [Tavily](https://tavily.com) API key.
 
-On first launch, Losna CLI will guide you through the initial configuration:
+All keys are stored locally in `~/.losnarc` (JSON format) and are never sent anywhere else.
 
-1. **OpenRouter API Key** (required) — Used to communicate with the AI model. Get one at [openrouter.ai](https://openrouter.ai).
-2. **Web Search** (optional) — You will be asked whether you want to enable web search. If yes, you will be prompted for a [Tavily](https://tavily.com) API key.
+---
 
-All keys are stored locally in `~/.losnarc` (JSON format). They are never transmitted anywhere other than their respective API endpoints.
-
-## Usage
-
-Navigate to any project directory and launch the assistant:
-
-```bash
-cd ~/my-project
-losna
-```
-
-The agent operates in the context of your current working directory. It can read your project files, execute commands, and create or modify files within that directory.
-
-### Commands
+## 💻 Slash Commands
 
 | Command | Description |
 |---|---|
@@ -115,95 +113,75 @@ The agent operates in the context of your current working directory. It can read
 | `/new <title>` | Start a new chat session with a custom title |
 | `/sessions` | List all saved chat sessions with their IDs |
 | `/switch <id>` | Switch to a different chat session by ID |
-| `/delete_session <id>` | Delete an existing chat session by its ID |
-| `/history [id]` | View chat logs and tool execution history for a session (defaults to current) |
-| `/model` | View the current OpenRouter model or switch to a new model ID |
-| `/plugin add <url>` | Download and install all skills in a GitHub repository |
-| `/plugin add <url> --skill <name>` | Download and install one specific skill from a GitHub repository |
-| `/plugin remove` | Show a numbered list of installed plugins to choose for removal |
-| `/plugin remove <name>` | Uninstall/remove a specific custom skill plugin from project |
-| `/search <query>` | Instruct the agent to search the web and report findings |
-| `/exit` or `/quit` | Close the current session |
+| `/delete_session <id>` | Delete an existing chat session by ID |
+| `/history [id]` | View chat logs and tool execution history for a session |
+| `/model` | View current OpenRouter model or switch to a new model ID |
+| `/readonly` | Toggle Read-Only Mode (blocks file modification & shell execution) |
+| `/plugin add <url>` | Download and install all skills from a GitHub repository |
+| `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
+| `/plugin remove` | Show interactive list of installed plugins to choose for removal |
+| `/plugin remove <name>` | Uninstall/remove a specific skill plugin from local project |
+| `/search <query>` | Search the web using Tavily and synthesize results |
+| `/exit` or `/quit` | Exit Losna CLI session |
 
-### Skill & Plugin Commands
+---
 
-If your project contains a `skills/` directory with markdown instruction files, they will appear as additional slash commands. For example, a file at `skills/unit-testing/SKILL.md` becomes available as `/unit-testing`.
+## 🔌 Skill & Plugin System
 
-#### Installing Plugins from GitHub
+Project skills stored in `./skills/<skill-name>/SKILL.md` are automatically recognized as slash commands (e.g., `/unit-testing`).
 
-You can dynamically import custom skills and prompt packages directly into your project's local workspace from remote Git repositories using the `/plugin` command:
-
-**Option A: Install all skills from a repository (Auto-detect)**
-If you do not specify a skill name, Losna CLI scans the repository and installs every skill it finds:
+### Installing Plugins from GitHub
 ```bash
+# Install all skills from a repository
 /plugin add https://github.com/JuliusBrussee/caveman
-```
 
-**Option B: Install only one specific skill**
-Use the `--skill` option followed by the folder name to install only a single skill:
-```bash
+# Install a specific skill from a repository
 /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
 ```
 
-#### Uninstalling/Removing a plugin
-
-**Option A: Interactive List Selection (Recommended)**
-Type the command without arguments. Losna CLI will show a numbered list of installed skills for you to pick and delete:
+### Removing Plugins
 ```bash
+# Interactive selection list
 /plugin remove
-```
 
-**Option B: Delete directly by name**
-If you already know the name of the skill/plugin folder, you can delete it immediately:
-```bash
+# Direct removal by name
 /plugin remove caveman
 ```
 
-#### Writing Custom Plugins
-
-A Losna CLI plugin is simple. To write your own, create the following directory structure in your project:
-
-```
-skills/
-  my-custom-skill/
-    SKILL.md
-```
-
-Inside `SKILL.md`, define a YAML header at the top, followed by markdown instructions for the AI:
-
+### Writing Custom Skills
+Create `./skills/my-custom-skill/SKILL.md` in your project:
 ```markdown
 ---
 name: my-custom-skill
-description: Guides the agent on how to write code according to my team's style guide.
+description: Custom team coding guidelines and security review rules.
 ---
 # Instructions
-When this skill is invoked:
-1. Always prefix variable names with...
+1. Always check for memory leaks and unchecked input...
 2. Use strict typing...
 ```
 
-Once saved, the command `/my-custom-skill` becomes instantly available via autocomplete in the Losna prompt. Calling `/my-custom-skill <your request>` will prompt the agent to read and follow these rules.
+---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
 losna-cli/
-  src/
-    agent/
-      main.py          # Application entry point
-      config.py         # Configuration and API key management
-      db.py             # SQLite persistence layer
-      tools.py          # Agent tool definitions and dispatch
-      prompts.py        # System prompt builder
-      session.py        # Session selection and management
-      memory.py         # Memory compaction logic
-      skills_loader.py  # Dynamic skill loading from project files
-      plugin_manager.py # Remote plugin cloning and package installer
-      ui.py             # Terminal UI (spinner, banner, markdown renderer)
-  skills/               # Project-level skill definitions (optional)
-  install.ps1           # Windows installer
-  install.sh            # macOS/Linux installer
-  uninstall.ps1         # Windows uninstaller
-  uninstall.sh          # macOS/Linux uninstaller
-  pyproject.toml        # Package metadata and dependencies
+├── src/
+│   └── agent/
+│       ├── main.py          # Application entry point
+│       ├── config.py        # Configuration and API key management
+│       ├── db.py            # SQLite persistence layer
+│       ├── tools.py         # Agent tool definitions, web reader & dispatcher
+│       ├── prompts.py       # System prompt builder & Read-Only constraints
+│       ├── session.py       # Session selection & management
+│       ├── memory.py        # Memory compaction logic
+│       ├── skills_loader.py # Dynamic skill loading from project files
+│       ├── plugin_manager.py# Remote plugin package installer
+│       └── ui.py            # Terminal UI (spinners, banners, markdown renderer)
+├── skills/                  # Local project skill definitions
+├── tests/                   # Automated pytest suite
+├── install.ps1              # Windows installer
+├── install.sh               # macOS/Linux installer
+├── pyproject.toml           # Package metadata, dependencies & bump-my-version
+└── README.md
 ```
