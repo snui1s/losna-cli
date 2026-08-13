@@ -104,7 +104,7 @@ def get_user_input(skills):
         skills: List of dicts representing available skills, e.g. [{"name": ...}]
     Returns the typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = SlashCompleter(words)
@@ -148,7 +148,7 @@ def print_banner(model_name, project_path):
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.1.5{RESET}",
+        f"{LIGHT_BLUE}Losna CLI 0.2.0{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]

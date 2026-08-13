@@ -9,7 +9,7 @@ from . import db
 from . import prompts
 from . import session
 from . import skills_loader
-from .tools import my_tools, dispatch_tool
+from .tools import my_tools, dispatch_tool, get_available_tools
 from .memory import compact_memory
 from .ui import Spinner, get_user_input, print_banner, print_agent_response
 from . import plugin_manager
@@ -54,6 +54,7 @@ def main():
             print("  /delete_session <id> - Delete an existing chat session by its ID")
             print("  /history [id]  - View the chat logs and tool call history for a session (defaults to current)")
             print("  /model         - View current OpenRouter model or switch to a new model ID")
+            print("  /readonly      - Toggle Read-Only Mode (blocks file modification & shell execution)")
             print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
             print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
             print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
@@ -239,6 +240,33 @@ def main():
             print()
             continue
 
+        if user_input.lower().startswith("/readonly"):
+            parts = user_input.split()
+            if len(parts) > 1:
+                arg = parts[1].lower()
+                if arg in ['on', 'true', '1']:
+                    config.READ_ONLY_MODE = True
+                elif arg in ['off', 'false', '0']:
+                    config.READ_ONLY_MODE = False
+                elif arg == 'status':
+                    pass
+                else:
+                    print("Usage: /readonly [on|off|status]\n")
+                    continue
+            else:
+                config.READ_ONLY_MODE = not config.READ_ONLY_MODE
+
+            CYAN = "\033[1;36m"
+            GREEN = "\033[1;32m"
+            RESET = "\033[0m"
+            status_text = f"{CYAN}ENABLED (Read-Only Mode){RESET}" if config.READ_ONLY_MODE else f"{GREEN}DISABLED (Full Access){RESET}"
+            print(f"  [System]: Read-Only Mode is now {status_text}\n")
+
+            SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
+            if conversation_history and conversation_history[0].get("role") == "system":
+                conversation_history[0]["content"] = SYSTEM_PROMPT
+            continue
+
         if user_input.lower().startswith("/search"):
             query = user_input[7:].strip()
             if not query:
@@ -262,7 +290,7 @@ def main():
 
         # Check for dynamic skill command (e.g. /unit-testing <query>)
         command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin'}
+        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly'}
         if not is_skill_cmd and user_input.startswith("/") and command not in reserved_commands:        
             parts = user_input.split(maxsplit=1)
             cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'
@@ -331,10 +359,11 @@ def main():
                     spinner = Spinner("Reflecting")
                     spinner.start()
                     try:
+                        active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
                         response = client.chat.send(
                             model=config.MODEL_NAME,
                             messages=conversation_history,
-                            tools=my_tools
+                            tools=active_tools
                         )
                     finally:
                         spinner.stop()
@@ -384,7 +413,7 @@ def main():
                             
                             try:
                                 # Run the dispatcher
-                                tool_result = dispatch_tool(func_name, args)
+                                tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
                                 
                                 # Handle interactive soft-block confirmation prompts
                                 if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
@@ -405,7 +434,7 @@ def main():
                                         tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary} (Confirmed)")
                                         tool_spinner.start()
                                         try:
-                                            tool_result = dispatch_tool(func_name, args)
+                                            tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
                                         finally:
                                             tool_spinner.stop()
                                     else:
