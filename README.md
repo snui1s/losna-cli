@@ -21,28 +21,28 @@
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🧠 Deep Analysis & BYOK (Bring Your Own Key)
+### Deep Analysis & BYOK (Bring Your Own Key)
 - **Bring Your Own Key (BYOK)** — Connect directly to OpenRouter & Tavily. Zero token markup, no middleman limits, and total freedom to choose any model (*DeepSeek V4, Claude 3.5, Gemini 2.5, GPT-4o*).
 - **Deep Q&A & Security Auditing** — Built to read large code blocks, analyze architecture, and find security vulnerabilities or logic flaws without truncating long explanations.
 
-### 🛡️ Read-Only Mode (`/readonly`)
+### Read-Only Mode (`/readonly`)
 - **Strict Safety Toggle** — Lock the agent into Read-Only mode with `/readonly`. Modifying tools (*file writing, editing, replacing, deleting*) and shell command execution are blocked at both schema and runtime levels — safe for auditing production code.
 - **Interactive Command Interception** — Destructive shell commands trigger explicit colorized `(y/n)` confirmation before running.
 
-### 🔍 Web Article Reader & Live Search
+### Web Article Reader & Live Search
 - **Article Reader (`read_web_page`)** — Powered by `trafilatura` to extract clean text/markdown from blog posts, documentation, and news URLs.
 - **Web Search (`/search`)** — Integrated Tavily web search for real-time documentation, recent news, and online research.
 
-### ⚡ Performance & UX
+### Performance & UX
 - **Multi-Session Chat** — Manage multiple independent chat tabs backed by a local SQLite database (`agent_data.db`).
 - **Memory Compaction** — Automatically summarizes older context when history exceeds thresholds to preserve tokens and keep response times fast.
 - **Skill & Plugin System** — Add markdown instruction files to `./skills/` or install dynamic prompt plugins directly from GitHub via `/plugin add`.
 
 ---
 
-## ⚡ Quick Install
+## Quick Install
 
 ### Prerequisites
 - [Git](https://git-scm.com)
@@ -66,7 +66,7 @@ losna
 ```
 
 <details>
-<summary><b>🔍 What the installer does under the hood</b></summary>
+<summary><b>What the installer does under the hood</b></summary>
 
 1. Clones this repository into `~/.losna/`
 2. Creates an isolated Python virtual environment inside `~/.losna/.venv/`
@@ -94,7 +94,7 @@ curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.sh |
 
 ---
 
-## 🔑 Initial Setup
+## Initial Setup
 
 On first launch, Losna CLI prompts for configuration:
 
@@ -105,7 +105,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 
 ---
 
-## 💻 Slash Commands
+## Slash Commands
 
 | Command | Description |
 |---|---|
@@ -128,7 +128,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 
 ---
 
-## 🔌 Skill & Plugin System
+## Skill & Plugin System
 
 Project skills stored in `./skills/<skill-name>/SKILL.md` are automatically recognized as slash commands (e.g., `/unit-testing`).
 
@@ -164,7 +164,7 @@ description: Custom team coding guidelines and security review rules.
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 losna-cli/
