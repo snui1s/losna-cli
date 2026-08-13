@@ -1,3 +1,11 @@
+"""
+mention_utils.py — Smart File Mention (@filepath) parsing and attachment module.
+
+Provides utilities to scan user input prompts for @filepath tokens, validate
+file existence in the local project directory, load file contents, and format
+attached file context into system prompts.
+"""
+
 import os
 import re
 from .tools import truncate_content
@@ -9,6 +17,12 @@ MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_\-\.\/\\]+)")
 def extract_file_mentions(text: str):
     """
     Scans input text for @filepath candidates and returns a list of existing valid file paths.
+
+    Args:
+        text (str): The user input prompt text.
+
+    Returns:
+        list[str]: A list of relative file paths that exist in the working directory.
     """
     if not text or "@" not in text:
         return []
@@ -37,8 +51,14 @@ def extract_file_mentions(text: str):
 
 def load_file_attachments(filepaths):
     """
-    Reads content from list of valid file paths.
-    Truncates content if file is too large to prevent token overflow.
+    Reads content from a list of valid file paths.
+    Truncates content if a file is too large to prevent token overflow.
+
+    Args:
+        filepaths (list[str]): List of relative file paths to read.
+
+    Returns:
+        list[dict]: List of dictionaries containing 'path' and 'content'.
     """
     attachments = []
     for rel_path in filepaths:
@@ -62,7 +82,13 @@ def load_file_attachments(filepaths):
 
 def build_mention_prompt_block(attachments):
     """
-    Formats list of file attachments into a clean system instruction payload.
+    Formats a list of file attachments into a clean system instruction payload.
+
+    Args:
+        attachments (list[dict]): List of attachment dicts containing 'path' and 'content'.
+
+    Returns:
+        str: Formatted system prompt block with file contents.
     """
     if not attachments:
         return ""

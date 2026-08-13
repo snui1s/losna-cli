@@ -1,3 +1,11 @@
+"""
+diff_utils.py — Git diff and session memory visualization helpers.
+
+Provides functions to extract git diffs for tracked and untracked files,
+render syntax-highlighted diffs on the terminal using Rich, and display
+structured session memory breakdowns.
+"""
+
 import os
 import subprocess
 from rich.console import Console
@@ -14,6 +22,12 @@ def get_git_diff(filepath=None):
     Retrieves the git diff output relative to HEAD.
     If filepath is provided, inspects changes for that specific file.
     Supports both tracked files and newly created untracked files.
+
+    Args:
+        filepath (str, optional): Relative path to a specific file to diff.
+
+    Returns:
+        str: Raw diff output text or empty string if no diff exists.
     """
     try:
         if filepath and os.path.exists(filepath):
@@ -61,6 +75,10 @@ def get_git_diff(filepath=None):
 def render_git_diff(diff_text, title="Git Diff"):
     """
     Renders git diff text with rich syntax highlighting (+ green, - red).
+
+    Args:
+        diff_text (str): The raw git diff string to render.
+        title (str, optional): Panel title header for the diff box.
     """
     if not diff_text or not diff_text.strip():
         console.print(f"\n[dim yellow]No git diff detected for {title}.[/dim yellow]\n")
@@ -79,6 +97,9 @@ def render_git_diff(diff_text, title="Git Diff"):
 def show_auto_diff(filepath=None):
     """
     Helper function automatically triggered after AI finishes modifying files.
+
+    Args:
+        filepath (str, optional): Path to the file that was modified.
     """
     diff_text = get_git_diff(filepath)
     if diff_text:
@@ -89,6 +110,9 @@ def show_auto_diff(filepath=None):
 def render_session_diff(session_id):
     """
     Displays a structured breakdown of the session's memory state and compaction history.
+
+    Args:
+        session_id (int): Database session ID to inspect.
     """
     archived_count, last_summary = db.get_compaction_state(session_id)
     all_msgs = db.load_messages(session_id, skip=0)

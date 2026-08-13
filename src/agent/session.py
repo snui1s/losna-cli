@@ -1,10 +1,21 @@
+"""
+session.py — Interactive session selection and management module.
+
+Handles listing, resuming, and creating chat sessions interactively upon application launch.
+"""
+
 from datetime import datetime
 from . import db
 from . import prompts
 
+
 def select_session():
-    """Show existing chat sessions and let the user resume one or start a new one.
-    Returns (session_id, conversation_history)."""
+    """
+    Shows existing chat sessions and lets the user resume one or start a new one.
+
+    Returns:
+        tuple[int, list[dict]]: A tuple containing (session_id, conversation_history).
+    """
     sessions = db.list_sessions()
 
     if sessions:

@@ -1,5 +1,6 @@
 """
 embedding_utils.py — OpenRouter vector embedding helpers.
+
 Uses requests.post to send texts to OpenRouter google/gemini-embedding-2.
 """
 
@@ -16,6 +17,13 @@ EMBEDDING_MODEL = "google/gemini-embedding-2"
 def get_embeddings(texts, is_query=False):
     """
     Fetch embeddings from OpenRouter using google/gemini-embedding-2.
+
+    Args:
+        texts (list[str]): List of input text passages to embed.
+        is_query (bool, optional): Whether input is a search query. Defaults to False.
+
+    Returns:
+        list[list[float]]: List of vector embeddings.
     """
     api_key = config.OPENROUTER_API_KEY
     if not api_key:
@@ -42,29 +50,58 @@ def get_embeddings(texts, is_query=False):
     return [item["embedding"] for item in items]
 
 
-# ── convenience wrappers ──────────────────────────────────────────
-
 def embed_passage(text):
-    """Embed a single fact/passage."""
+    """
+    Embed a single fact or code passage.
+
+    Args:
+        text (str): Input text string.
+
+    Returns:
+        list[float]: Vector embedding.
+    """
     return get_embeddings([text], is_query=False)[0]
 
 
 def embed_passages_batch(texts):
-    """Embed multiple facts/passages in one API call."""
+    """
+    Embed multiple facts or passages in a single API call batch.
+
+    Args:
+        texts (list[str]): Input list of text strings.
+
+    Returns:
+        list[list[float]]: List of vector embeddings.
+    """
     if not texts:
         return []
     return get_embeddings(texts, is_query=False)
 
 
 def embed_query(text):
-    """Embed a single query/user message."""
+    """
+    Embed a single search query or user prompt.
+
+    Args:
+        text (str): Query string.
+
+    Returns:
+        list[float]: Vector embedding.
+    """
     return get_embeddings([text], is_query=True)[0]
 
 
-# ── vector math ───────────────────────────────────────────────────
-
 def cosine_similarity(vec_a, vec_b):
-    """Cosine similarity between two float vectors."""
+    """
+    Computes cosine similarity between two float vectors.
+
+    Args:
+        vec_a (list[float]): First vector.
+        vec_b (list[float]): Second vector.
+
+    Returns:
+        float: Cosine similarity score between -1.0 and 1.0.
+    """
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
         return 0.0
     dot = sum(a * b for a, b in zip(vec_a, vec_b))
@@ -76,12 +113,28 @@ def cosine_similarity(vec_a, vec_b):
 
 
 def vector_to_json(vec):
-    """Serialize a float vector to a JSON string (for SQLite TEXT column)."""
+    """
+    Serialize a float vector to a JSON string for SQLite storage.
+
+    Args:
+        vec (list[float]): Vector embedding.
+
+    Returns:
+        str: JSON string representation of the vector.
+    """
     return json.dumps(vec)
 
 
 def vector_from_json(json_str):
-    """Deserialize a float vector from a JSON string."""
+    """
+    Deserialize a float vector from a JSON string.
+
+    Args:
+        json_str (str): JSON string representation of vector.
+
+    Returns:
+        list[float]: Deserialized vector list.
+    """
     if not json_str:
         return []
     try:

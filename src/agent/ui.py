@@ -1,20 +1,43 @@
+"""
+ui.py — Terminal User Interface (TUI) and output rendering module.
+
+Provides prompt_toolkit session wrappers with autocomplete, Rich-based markdown
+response rendering, ASCII banner display, and non-blocking background update checks.
+"""
+
 import threading
 import sys
 import time
+import os
 from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.styles import Style
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-
-import os
 from . import config
 
+
 class PromptCompleter(Completer):
-    """Suggests completions for slash commands '/' and file mentions '@'."""
+    """
+    Suggests completions for slash commands ('/') and workspace file mentions ('@').
+    """
+
     def __init__(self, commands):
+        """
+        Initializes PromptCompleter with slash command list.
+
+        Args:
+            commands (list[str]): List of valid slash commands.
+        """
         self.commands = sorted(commands)
 
     def get_completions(self, document, complete_event):
+        """
+        Yields autocompletion suggestions based on current cursor document text.
+
+        Args:
+            document: Prompt_toolkit Document object.
+            complete_event: Prompt_toolkit CompleteEvent object.
+        """
         text_before = document.text_before_cursor
         word_before = document.get_word_before_cursor(WORD=True)
 
@@ -30,11 +53,11 @@ class PromptCompleter(Completer):
         if '@' in word_before:
             at_idx = word_before.rfind('@')
             mention_prefix = word_before[at_idx + 1:]
-            
+
             try:
                 base_dir = os.getcwd()
                 rel_prefix = mention_prefix.replace("\\", "/")
-                
+
                 count = 0
                 for root, dirs, files in os.walk(base_dir):
                     dirs[:] = [d for d in dirs if not d.startswith('.')]
@@ -43,73 +66,57 @@ class PromptCompleter(Completer):
                         if rel_path.lower().startswith(rel_prefix.lower()):
                             yield Completion(f"@{rel_path}", start_position=-len(word_before[at_idx:]))
                             count += 1
-                            if count >= 30: # Limit suggestions
+                            if count >= 30:  # Limit suggestions
                                 break
                     if count >= 30 or root.count(os.sep) - base_dir.count(os.sep) >= 2:
                         dirs.clear()
             except Exception:
                 pass
 
+
 class Spinner:
+    """
+    Threaded terminal progress spinner with rotating moon phase indicators.
+    """
+
     def __init__(self, message="Loading"):
+        """
+        Initializes the spinner instance.
+
+        Args:
+            message (str, optional): Loading text label. Defaults to "Loading".
+        """
         self.message = message
         # Moon phases sequence rotating clockwise
-        self.spinner_chars = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
-        self.stop_event = threading.Event()
+        self.frames = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+        self.stop_running = False
         self.thread = None
 
-    def _spin(self):
-        idx = 0
-        frames = [" .", " . -", " . - *", " *", " * -", " * - .", ""]
-        max_len = max(len(f) for f in frames)
-
-        # ANSI Colors for Esc prompt
-        RED = "\033[1;31m"
-        GRAY = "\033[38;5;244m"
-        RESET = "\033[0m"
-        esc_hint = f" {GRAY}({RED}Press [Esc] to cancel{GRAY}){RESET}"
-
-        while not self.stop_event.is_set():
-            # Check for Esc key press on Windows
-            if os.name == 'nt':
-                try:
-                    import msvcrt
-                    if msvcrt.kbhit():
-                        ch = msvcrt.getch()
-                        if ch in (b'\x1b', b'\x03'):  # ESC key or Ctrl+C
-                            import _thread
-                            self.stop_event.set()
-                            sys.stdout.write("\r" + " " * 80 + "\r")
-                            sys.stdout.flush()
-                            _thread.interrupt_main()
-                            break
-                except Exception:
-                    pass
-
-            char = self.spinner_chars[idx % len(self.spinner_chars)]
-            frame = frames[idx % len(frames)]
-            pad = " " * (max_len - len(frame))
-            sys.stdout.write(f"\r  [{char}] {self.message}{frame}{pad}{esc_hint} ")
-            sys.stdout.flush()
-            idx += 1
-            self.stop_event.wait(0.25)
-        # Clean up line
-        sys.stdout.write("\r" + " " * 80 + "\r")
-        sys.stdout.flush()
-
     def start(self):
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._spin)
-        self.thread.daemon = True
+        """Starts the spinner animation in a background thread."""
+        self.stop_running = False
+        self.thread = threading.Thread(target=self._animate, daemon=True)
         self.thread.start()
 
+    def _animate(self):
+        """Internal animation loop executing in background thread."""
+        idx = 0
+        while not self.stop_running:
+            frame = self.frames[idx % len(self.frames)]
+            sys.stdout.write(f"\r{frame} {self.message}...")
+            sys.stdout.flush()
+            time.sleep(0.12)
+            idx += 1
+
     def stop(self):
-        self.stop_event.set()
-        if self.thread:
-            try:
-                self.thread.join(timeout=0.5)
-            except Exception:
-                pass
+        """Stops the spinner animation and clears the line."""
+        self.stop_running = True
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.5)
+        # Clear the terminal line completely
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
+
 
 # Custom styles for the CLI prompt and autocomplete dropdown menu
 custom_style = Style.from_dict({
@@ -124,13 +131,17 @@ custom_style = Style.from_dict({
 # Instantiate the PromptSession once at the module level with auto_suggest enabled
 prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory())
 
+
 def get_user_input(skills):
     """
     Shows an interactive styled prompt to the user with autocomplete for commands and skills.
     Handles Ctrl+C (KeyboardInterrupt) and Ctrl+D (EOFError) gracefully.
+
     Args:
-        skills: List of dicts representing available skills, e.g. [{"name": ...}]
-    Returns the typed string, or "/exit" on Ctrl+D.
+        skills (list[dict]): List of dicts representing available skills, e.g. [{"name": ...}]
+
+    Returns:
+        str: The typed input string, or "/exit" on Ctrl+D / Ctrl+C.
     """
     words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm']
     for s in skills:
@@ -167,11 +178,15 @@ def get_user_input(skills):
     except EOFError:
         return "/exit"  # Return exit command to shut down the session
 
+
 def print_banner(model_name, project_path):
     """
     Renders a colored ASCII moon logo on the left and Losna CLI details on the right.
+
+    Args:
+        model_name (str): Active OpenRouter model name.
+        project_path (str): Current workspace directory path.
     """
-    # ANSI color codes
     GOLD = "\033[38;5;220m"
     AMBER = "\033[38;5;214m"
     PURPLE = "\033[38;5;97m"                      # Soft cosmic purple for the dark side
@@ -180,7 +195,7 @@ def print_banner(model_name, project_path):
     GRAY = "\033[38;5;244m"
     RESET = "\033[0m"
 
-    # Logo: 🌒 Waxing Crescent (Sharp Double Tips) - แหลมคมทั้งยอดบนและยอดล่าง สมมาตรกลมมน
+    # Logo: 🌒 Waxing Crescent
     visual_logo = [
         f"        {PURPLE}.%%%%{GOLD}**.{RESET}        ",
         f"      {PURPLE}%%o%%%%%{GOLD}%**.{RESET}       ",
@@ -191,7 +206,7 @@ def print_banner(model_name, project_path):
         f"      {PURPLE}%%%%%%%%%{GOLD}%**{RESET}      ",
         f"        {PURPLE}'%%%%{GOLD}**'{RESET}        ",
     ]
-    # Text lines on the right side (vertically centered with the moon)
+    # Text lines on the right side
     text_lines = [
         "",
         "",
@@ -215,13 +230,9 @@ def _trigger_async_update_check():
     Spawns a background thread to check for updates against the GitHub repository.
     Never blocks the main program startup.
     """
-    import threading
     import urllib.request
-    import os
-    import json
     from . import skills_loader
 
-    # Colors
     GREEN = "\033[38;5;120m"
     GRAY = "\033[38;5;244m"
     LIGHT_BLUE = "\033[1;38;5;75m"
@@ -231,17 +242,14 @@ def _trigger_async_update_check():
     global_dir = os.path.expanduser("~/.losna")
     cache_file = os.path.join(global_dir, "update_cache.json")
 
-    # If git repo is not cloned (e.g. running in development workspace directly),
-    # use project root for local sha detection.
     local_git_dir = os.path.join(global_dir, ".git")
     if not os.path.exists(local_git_dir):
         local_git_dir = os.path.join(project_root, ".git")
 
     if not os.path.exists(local_git_dir):
-        return # Skip if not a git repository clone
+        return
 
     def check_github():
-        # 1. Resolve local SHA
         local_sha = None
         try:
             head_path = os.path.join(local_git_dir, "HEAD")
@@ -253,13 +261,12 @@ def _trigger_async_update_check():
                     local_sha = f.read().strip()
             else:
                 local_sha = ref
-        except:
+        except Exception:
             return
 
         if not local_sha:
             return
 
-        # 2. Resolve remote SHA (cache or network request)
         now = time.time()
         cached_sha = None
         last_check = 0
@@ -270,31 +277,28 @@ def _trigger_async_update_check():
                     data = json.load(f)
                     cached_sha = data.get("remote_sha")
                     last_check = data.get("last_check", 0)
-            except:
+            except Exception:
                 pass
 
-        # Only check GitHub API once every 6 hours to prevent rate limits
         if now - last_check < 21600 and cached_sha:
             remote_sha = cached_sha
         else:
             try:
                 url = "https://api.github.com/repos/snui1s/losna-cli/commits/main"
                 req = urllib.request.Request(
-                    url, 
+                    url,
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LosnaCLIUpdater"}
                 )
                 with urllib.request.urlopen(req, timeout=3.0) as response:
                     res_data = json.loads(response.read().decode())
                     remote_sha = res_data.get("sha")
-                    
-                # Cache the result
+
                 os.makedirs(global_dir, exist_ok=True)
                 with open(cache_file, "w") as f:
                     json.dump({"remote_sha": remote_sha, "last_check": now}, f)
-            except:
+            except Exception:
                 remote_sha = cached_sha
 
-        # 3. Compare and print notification (No prompt, no blocking)
         if remote_sha and local_sha != remote_sha:
             print(f"\n  {GREEN}✨ A new version of Losna CLI is available!{RESET}")
             if os.name == 'nt':
@@ -309,9 +313,11 @@ def _trigger_async_update_check():
 
 def print_agent_response(content: str, duration: float):
     """
-    Renders the agent's markdown response beautifully using rich.
-    Includes an elegant rounded header box and handles syntax/tables cleanly.
-    Single-pass rendering eliminates ANSI redraw artifacts on terminal resizes.
+    Renders the agent's markdown response beautifully using Rich.
+
+    Args:
+        content (str): Markdown response text to render.
+        duration (float): Response generation duration in seconds.
     """
     from rich.console import Console
     from rich.markdown import Markdown
@@ -319,7 +325,6 @@ def print_agent_response(content: str, duration: float):
     from rich.theme import Theme
     from rich import box
 
-    # Define custom styling theme for Markdown elements
     custom_theme = Theme({
         "markdown.h1": "bold color(220)",      # Bright Gold
         "markdown.h2": "bold color(214)",      # Amber / Orange-yellow
