@@ -1,32 +1,34 @@
 """
-skills_loader.py - Loads project context for the system prompt.
+skills_loader.py — Loads project context and SKILL.md packages for system prompts.
 
 Two layers:
-1. README.md at project root - loaded IN FULL, always, as static context.
-2. skills/<name>/SKILL.md - only the short description is loaded upfront (cheap).
-   The full content is loaded on demand via read_skill(), when the agent decides
-   a task actually needs it - keeps the system prompt lean instead of dumping
-   every .md file into every request.
-
-This mirrors the "skills" pattern: a directory of specialized docs, each with
-a lightweight description that lets the agent decide what to pull in, rather
-than the agent (or us) trying to guess relevance via keyword matching.
+1. README.md at project root — loaded in full as static context.
+2. skills/<name>/SKILL.md — only short descriptions are loaded upfront.
+   The full content is loaded on demand via read_skill() when requested.
 """
 
 import os
 
-README_MAX_CHARS = 20000   # cap so one giant README can't blow up every prompt
-SKILL_MAX_CHARS = 20000    # cap for a single skill's full content when loaded
+README_MAX_CHARS = 20000   # Cap so a giant README cannot overflow prompt
+SKILL_MAX_CHARS = 20000    # Cap for a single skill's full content when loaded
 
 
 def _project_root():
+    """
+    Resolves the canonical project root directory path.
+
+    Returns:
+        str: Absolute path to the current working directory root.
+    """
     return os.path.realpath(os.getcwd())
 
 
 def load_readme():
     """
-    Read README.md at the project root in full, if it exists.
-    Returns "" if there's no README - callers should just skip the block then.
+    Reads README.md at the project root in full, if it exists.
+
+    Returns:
+        str: Full or truncated README content, or empty string if not present.
     """
     root = _project_root()
     readme_path = os.path.join(root, "README.md")
@@ -49,9 +51,14 @@ def load_readme():
 
 def _extract_description(content, skill_name):
     """
-    Pull a one-line description out of a SKILL.md file's content.
-    Looks for a line starting with 'Description:' first; falls back to the
-    first non-empty, non-heading line; falls back to the skill's folder name.
+    Extracts a one-line description out of a SKILL.md file's content.
+
+    Args:
+        content (str): Full text of SKILL.md.
+        skill_name (str): Skill folder name fallback.
+
+    Returns:
+        str: Description string extracted from SKILL.md.
     """
     lines = content.splitlines()
 
@@ -70,10 +77,10 @@ def _extract_description(content, skill_name):
 
 def list_skills():
     """
-    Scan skills/<name>/SKILL.md for every skill in the project.
-    Returns a list of dicts: {"name": ..., "description": ..., "path": ...}
-    Only reads descriptions here - NOT full content, to keep this cheap to
-    call on every session start.
+    Scans skills/<name>/SKILL.md for every skill in the project workspace.
+
+    Returns:
+        list[dict]: List of skill dicts containing 'name', 'description', and 'path'.
     """
     root = _project_root()
     skills_dir = os.path.join(root, "skills")
@@ -112,9 +119,10 @@ def list_skills():
 
 def build_skills_prompt_block():
     """
-    Format the skills list for inclusion in the system prompt - just names
-    and descriptions, so the agent knows what's available and can call
-    read_skill(name) if a task actually needs one.
+    Formats the skills list for inclusion in the system prompt.
+
+    Returns:
+        str: Formatted system prompt block summarizing available skills.
     """
     skills = list_skills()
     if not skills:
@@ -137,10 +145,13 @@ def build_skills_prompt_block():
 
 def read_skill(skill_name):
     """
-    Tool function: load the full content of one or more skills' SKILL.md on demand.
-    Accepts either a single skill name, or multiple names separated by commas
-    (e.g. "security-review,code-navigation") to load several at once in one call.
-    Security: each name must be a plain folder name, no path traversal.
+    Tool function: loads full content of one or more skills' SKILL.md on demand.
+
+    Args:
+        skill_name (str): Single skill name or comma-separated list of skill names.
+
+    Returns:
+        str: Markdown content of requested skill(s) or error string.
     """
     if not skill_name or not skill_name.strip():
         return "Error: No skill name provided."
@@ -160,7 +171,7 @@ def read_skill(skill_name):
 
         skill_file = os.path.realpath(os.path.join(root, "skills", name, "SKILL.md"))
 
-        # Guard against path traversal / symlink tricks, same pattern as tools.py
+        # Guard against path traversal / symlink tricks
         if os.path.commonpath([skills_dir, skill_file]) != skills_dir:
             results.append(f"Error: Security block! Invalid skill path for '{name}'.")
             continue

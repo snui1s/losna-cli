@@ -1,3 +1,10 @@
+"""
+prompts.py — System prompt builder and OpenRouter prompt caching optimizer.
+
+Constructs structured system prompt payloads with static (persona, README, skills list,
+pinned memory) and dynamic (compaction summary, relevant facts, read-only status) components.
+"""
+
 import platform
 import os
 from . import db
@@ -21,6 +28,16 @@ def build_system_message(invoked_skill_prompt=None, previous_summary=None, relev
     Static components (Persona, README, Skills List, Pinned Core Memory, Invoked Skill)
     are ordered first to maximize OpenRouter automatic prefix cache hits.
     Optionally applies explicit cache_control blocks for Anthropic/Claude models.
+
+    Args:
+        invoked_skill_prompt (str, optional): Instruction content of an invoked skill.
+        previous_summary (str, optional): Compacted conversation summary text.
+        relevant_facts (list[str], optional): Retrieved dynamic memory facts.
+        use_cache_control (bool, optional): Whether to format as dict with ephemeral cache control.
+        read_only (bool, optional): Whether Read-Only mode is active.
+
+    Returns:
+        dict: OpenRouter system message dictionary.
     """
     static_parts = [BASE_SYSTEM_PROMPT]
 
@@ -79,7 +96,18 @@ def build_system_message(invoked_skill_prompt=None, previous_summary=None, relev
 
 
 def build_system_prompt(invoked_skill_prompt=None, previous_summary=None, relevant_facts=None, read_only=False):
-    """Backward-compatible helper returning plain system prompt string."""
+    """
+    Backward-compatible helper returning plain system prompt string.
+
+    Args:
+        invoked_skill_prompt (str, optional): Instruction content of an invoked skill.
+        previous_summary (str, optional): Compacted conversation summary text.
+        relevant_facts (list[str], optional): Retrieved dynamic memory facts.
+        read_only (bool, optional): Whether Read-Only mode is active.
+
+    Returns:
+        str: Plain text system prompt.
+    """
     msg = build_system_message(
         invoked_skill_prompt=invoked_skill_prompt,
         previous_summary=previous_summary,
@@ -88,4 +116,3 @@ def build_system_prompt(invoked_skill_prompt=None, previous_summary=None, releva
         read_only=read_only
     )
     return msg["content"]
-
