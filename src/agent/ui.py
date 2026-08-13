@@ -7,21 +7,48 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 import os
+from . import config
 
-class SlashCompleter(Completer):
-    """Only suggests completions when input starts with '/'."""
+class PromptCompleter(Completer):
+    """Suggests completions for slash commands '/' and file mentions '@'."""
     def __init__(self, commands):
         self.commands = sorted(commands)
 
     def get_completions(self, document, complete_event):
-        text = document.text_before_cursor.lstrip()
-        if not text.startswith('/'):
+        text_before = document.text_before_cursor
+        word_before = document.get_word_before_cursor(WORD=True)
+
+        # 1. Slash commands completion at start of input line
+        if text_before.lstrip().startswith('/') and ' ' not in text_before.lstrip():
+            text_lower = text_before.lstrip().lower()
+            for cmd in self.commands:
+                if cmd.lower().startswith(text_lower):
+                    yield Completion(cmd, start_position=-len(text_before.lstrip()))
             return
-        
-        text_lower = text.lower()
-        for cmd in self.commands:
-            if cmd.lower().startswith(text_lower):
-                yield Completion(cmd, start_position=-len(text))
+
+        # 2. File mention completion when typing '@'
+        if '@' in word_before:
+            at_idx = word_before.rfind('@')
+            mention_prefix = word_before[at_idx + 1:]
+            
+            try:
+                base_dir = os.getcwd()
+                rel_prefix = mention_prefix.replace("\\", "/")
+                
+                count = 0
+                for root, dirs, files in os.walk(base_dir):
+                    dirs[:] = [d for d in dirs if not d.startswith('.')]
+                    for file in files:
+                        rel_path = os.path.relpath(os.path.join(root, file), base_dir).replace("\\", "/")
+                        if rel_path.lower().startswith(rel_prefix.lower()):
+                            yield Completion(f"@{rel_path}", start_position=-len(word_before[at_idx:]))
+                            count += 1
+                            if count >= 30: # Limit suggestions
+                                break
+                    if count >= 30 or root.count(os.sep) - base_dir.count(os.sep) >= 2:
+                        dirs.clear()
+            except Exception:
+                pass
 
 class Spinner:
     def __init__(self, message="Loading"):
@@ -88,6 +115,7 @@ class Spinner:
 custom_style = Style.from_dict({
     'prompt': 'fg:#00ff88 bold',                # Neon green for "You" text
     'pointer': 'fg:#00bfff bold',               # Cyan for "❯" pointer
+    'confirm': 'fg:#5c6370 italic',             # Dim gray italic hint for confirmation prompt
     'completion-menu.completion': 'bg:#2c313c #abb2bf', # Dark slate background, soft white text
     'completion-menu.completion.current': 'bg:#00ff88 #000000 bold', # Neon green background, black text when highlighted
     'auto-suggest': 'fg:#5c6370 italic',        # Dim gray italic text for autosuggestions
@@ -104,16 +132,35 @@ def get_user_input(skills):
         skills: List of dicts representing available skills, e.g. [{"name": ...}]
     Returns the typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm']
     for s in skills:
         words.append(f"/{s['name']}")
-    completer = SlashCompleter(words)
+    completer = PromptCompleter(words)
 
     try:
-        return prompt_session.prompt(
+        user_text = prompt_session.prompt(
             HTML('<prompt>You</prompt><pointer> ❯ </pointer>'),
             completer=completer
         ).strip()
+
+        if not user_text:
+            return ""
+
+        # Slash commands execute immediately without double enter confirmation
+        if user_text.startswith('/'):
+            return user_text
+
+        # Require double Enter confirmation only when ENTER_2_CONFIRM is enabled
+        if config.ENTER_2_CONFIRM:
+            confirm_text = prompt_session.prompt(
+                HTML('<confirm>(Press Enter again to send to AI, or edit text)</confirm><pointer> ❯ </pointer>'),
+                default=user_text,
+                completer=completer
+            ).strip()
+            return confirm_text
+
+        return user_text
+
     except KeyboardInterrupt:
         print("\nExiting...")
         return "/exit"  # Return exit command to shut down the session

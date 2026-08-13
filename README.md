@@ -117,6 +117,8 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/history [id]` | View chat logs and tool execution history for a session |
 | `/model` | View current OpenRouter model or switch to a new model ID |
 | `/readonly` | Toggle Read-Only Mode (blocks file modification & shell execution) |
+| `/diff [file\|session]` | View colored syntax-highlighted git diff for a file or session memory state |
+| `/enter2confirm` | Toggle double-Enter requirement before sending prompts to AI |
 | `/plugin add <url>` | Download and install all skills from a GitHub repository |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
 | `/plugin remove` | Show interactive list of installed plugins to choose for removal |

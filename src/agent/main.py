@@ -13,6 +13,8 @@ from .tools import my_tools, dispatch_tool, get_available_tools
 from .memory import compact_memory
 from .ui import Spinner, get_user_input, print_banner, print_agent_response
 from . import plugin_manager
+from . import diff_utils
+from . import mention_utils
 
 def main():
     # --- Startup Initialization ---
@@ -55,6 +57,8 @@ def main():
             print("  /history [id]  - View the chat logs and tool call history for a session (defaults to current)")
             print("  /model         - View current OpenRouter model or switch to a new model ID")
             print("  /readonly      - Toggle Read-Only Mode (blocks file modification & shell execution)")
+            print("  /diff [file|session] - View colored git diff for a file or session memory state")
+            print("  /enter2confirm - Toggle double-Enter requirement before sending prompts to AI")
             print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
             print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
             print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
@@ -267,6 +271,40 @@ def main():
                 conversation_history[0]["content"] = SYSTEM_PROMPT
             continue
 
+        if user_input.lower().startswith("/diff"):
+            parts = user_input.split(maxsplit=1)
+            arg = parts[1].strip() if len(parts) > 1 else ""
+            if arg.lower() == "session":
+                diff_utils.render_session_diff(current_session_id)
+            else:
+                diff_text = diff_utils.get_git_diff(arg if arg else None)
+                title = f"Git Diff ({arg})" if arg else "Git Workspace Diff"
+                diff_utils.render_git_diff(diff_text, title=title)
+            continue
+
+        if user_input.lower().startswith("/enter2confirm"):
+            parts = user_input.split()
+            if len(parts) > 1:
+                arg = parts[1].lower()
+                if arg in ['on', 'true', '1']:
+                    config.ENTER_2_CONFIRM = True
+                elif arg in ['off', 'false', '0']:
+                    config.ENTER_2_CONFIRM = False
+                elif arg == 'status':
+                    pass
+                else:
+                    print("Usage: /enter2confirm [on|off|status]\n")
+                    continue
+            else:
+                config.ENTER_2_CONFIRM = not config.ENTER_2_CONFIRM
+
+            CYAN = "\033[1;36m"
+            GREEN = "\033[1;32m"
+            RESET = "\033[0m"
+            status_text = f"{CYAN}ENABLED (Press Enter 2x to send){RESET}" if config.ENTER_2_CONFIRM else f"{GREEN}DISABLED (Single Enter to send){RESET}"
+            print(f"  [System]: Double-Enter Confirmation is now {status_text}\n")
+            continue
+
         if user_input.lower().startswith("/search"):
             query = user_input[7:].strip()
             if not query:
@@ -290,7 +328,7 @@ def main():
 
         # Check for dynamic skill command (e.g. /unit-testing <query>)
         command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly'}
+        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm'}
         if not is_skill_cmd and user_input.startswith("/") and command not in reserved_commands:        
             parts = user_input.split(maxsplit=1)
             cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'
@@ -313,6 +351,20 @@ def main():
                 conversation_history.append({"role": "user", "content": user_msg})
                 db.save_message(current_session_id, "user", user_msg)
                 is_skill_cmd = True
+
+        # Check for @filepath mentions in user input
+        mentioned_files = mention_utils.extract_file_mentions(user_input)
+        if mentioned_files:
+            attachments = mention_utils.load_file_attachments(mentioned_files)
+            mention_block = mention_utils.build_mention_prompt_block(attachments)
+            for att in attachments:
+                print(f"  \033[1;36m[System]: Attached context from @{att['path']}\033[0m")
+
+            conversation_history.append({
+                "role": "system",
+                "content": mention_block
+            })
+            db.save_message(current_session_id, "system", mention_block)
 
         if not is_skill_cmd:
             # State Update: Append the new user message to the active conversation history
@@ -450,6 +502,11 @@ def main():
                             
                             # Print success checkmark instead of raw log dump
                             print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
+
+                            # Automatically trigger visual diff after file modifications
+                            if func_name in {"edit_local_file", "replace_in_file", "delete_local_file", "move_or_rename_file"} and not str(tool_result).startswith("Error"):
+                                target_file = args.get("filepath") or args.get("source_path") or args.get("dest_path")
+                                diff_utils.show_auto_diff(target_file)
                             
                             tool_msg = {
                                 "role": "tool",

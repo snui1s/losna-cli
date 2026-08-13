@@ -40,10 +40,18 @@ def get_or_prompt_key(env_name: str, display_name: str) -> str:
 MODEL_NAME = global_config.get("MODEL_NAME", "deepseek/deepseek-v4-flash")
 COMPACTION_MODEL = "google/gemini-2.5-flash-lite"
 READ_ONLY_MODE = False
+ENTER_2_CONFIRM = False
+
 
 def set_read_only_mode(enabled: bool):
     global READ_ONLY_MODE
     READ_ONLY_MODE = enabled
+
+
+def set_enter_2_confirm(enabled: bool):
+    global ENTER_2_CONFIRM
+    ENTER_2_CONFIRM = enabled
+
 
 
 def update_model_name(new_model_name: str):
