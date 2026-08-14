@@ -117,12 +117,38 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/history [id]` | View chat logs and tool execution history for a session |
 | `/model` | View current OpenRouter model or switch to a new model ID |
 | `/readonly` | Toggle Read-Only Mode (blocks file modification & shell execution) |
+| `/diff [file\|session]` | View colored syntax-highlighted git diff for a file or session memory state |
+| `/enter2confirm` | Toggle double-Enter requirement before sending prompts to AI |
+| `/pin <text>` | Pin a custom rule/fact to AI Core Memory (remembered forever across sessions) |
+| `/pins` | List all pinned Core Memory rules with their database IDs |
+| `/unpin <id>` | Unpin/remove a Core Memory rule by ID or exact text |
+| `/export [path]` | Export active session chat log into a structured Markdown document |
+| `/clear` | Clear terminal screen and re-render header banner |
+| `/max_tool_calls [n]` | View or set maximum tool call limit per turn (persisted in ~/.losnarc) |
 | `/plugin add <url>` | Download and install all skills from a GitHub repository |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
 | `/plugin remove` | Show interactive list of installed plugins to choose for removal |
-| `/plugin remove <name>` | Uninstall/remove a specific skill plugin from local project |
 | `/search <query>` | Search the web using Tavily and synthesize results |
 | `/exit` or `/quit` | Exit Losna CLI session |
+
+### 💡 Slash Command Examples
+```bash
+# Plugin Management
+/plugin add https://github.com/JuliusBrussee/caveman
+/plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
+/plugin remove caveman
+
+# Core Memory & Rule Pinning
+/pin Always write type hints and docstrings for functions
+/pins
+/unpin 1
+
+# Tool Execution & Session Controls
+/max_tool_calls 50
+/diff src/agent/main.py
+/export ./exports/session_notes.md
+/switch 3
+```
 
 ---
 
