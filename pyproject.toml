@@ -1,6 +1,6 @@
 [project]
 name = "losna-cli"
-version = "0.3.0"
+version = "0.4.0"
 description = "Losna CLI AI agent assistant"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.bumpversion]
-current_version = "0.3.0"
+current_version = "0.4.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"
@@ -53,9 +53,4 @@ message = "Bump version: {current_version} → {new_version}"
 filename = "pyproject.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
-
-[[tool.bumpversion.files]]
-filename = "src/agent/ui.py"
-search = 'Losna CLI {current_version}'
-replace = 'Losna CLI {new_version}'
 
