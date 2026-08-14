@@ -304,6 +304,52 @@ def load_pinned_memory():
         conn.close()
 
 
+def load_pinned_memory_with_ids():
+    """
+    Fetch all pinned Core Memory facts with database IDs.
+
+    Returns:
+        list[dict]: List of dicts with 'id' and 'text'.
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, fact_text FROM memory WHERE is_pinned = 1 ORDER BY id ASC")
+        rows = cur.fetchall()
+        return [{"id": r["id"], "text": r["fact_text"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_pinned_fact(identifier):
+    """
+    Unpin or remove a pinned memory item by integer ID or exact text string.
+
+    Args:
+        identifier (int | str): Database ID or fact text to remove.
+
+    Returns:
+        bool: True if an item was removed/unpinned, False otherwise.
+    """
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+            fact_id = int(identifier)
+            cur.execute("DELETE FROM memory WHERE id = ? AND is_pinned = 1", (fact_id,))
+        else:
+            cur.execute("DELETE FROM memory WHERE fact_text = ? AND is_pinned = 1", (str(identifier),))
+        rowcount = cur.rowcount
+        conn.commit()
+        return rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def set_fact_pinned_status(fact_identifier, is_pinned=True):
     """Pin or unpin a memory fact by text or ID."""
     conn = get_connection()

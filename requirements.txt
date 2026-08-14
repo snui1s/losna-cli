@@ -1,6 +1,8 @@
-openrouter==0.11.23
-prompt_toolkit==3.0.52
-pytest==9.1.1
-Requests==2.34.2
-rich==15.0.0
-yfinance==1.5.1
+bump-my-version>=0.28.0
+openrouter>=0.11.0
+prompt_toolkit>=3.0.0
+pytest>=9.1.1
+requests>=2.31.0
+rich>=10.0.0
+trafilatura>=1.6.0
+yfinance>=1.5.0

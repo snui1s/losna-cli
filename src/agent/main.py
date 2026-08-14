@@ -9,12 +9,13 @@ from . import db
 from . import prompts
 from . import session
 from . import skills_loader
-from .tools import my_tools, dispatch_tool, get_available_tools
-from .memory import compact_memory
-from .ui import Spinner, get_user_input, print_banner, print_agent_response
 from . import plugin_manager
 from . import diff_utils
 from . import mention_utils
+from . import export_utils
+from .tools import my_tools, dispatch_tool, get_available_tools
+from .memory import compact_memory
+from .ui import Spinner, get_user_input, print_banner, print_agent_response
 
 def main():
     # --- Startup Initialization ---
@@ -59,6 +60,12 @@ def main():
             print("  /readonly      - Toggle Read-Only Mode (blocks file modification & shell execution)")
             print("  /diff [file|session] - View colored git diff for a file or session memory state")
             print("  /enter2confirm - Toggle double-Enter requirement before sending prompts to AI")
+            print("  /pin <text>    - Pin a custom rule/fact to AI Core Memory (remembered forever across sessions)")
+            print("  /pins          - List all pinned Core Memory rules with their IDs")
+            print("  /unpin <id>    - Unpin/remove a Core Memory rule by ID")
+            print("  /export [path] - Export current chat session history to a Markdown document")
+            print("  /clear         - Clear terminal screen and re-render header banner")
+            print("  /max_tool_calls [n] - View or set max tool calls limit per turn (persisted in ~/.losnarc)")
             print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
             print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
             print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
@@ -67,6 +74,17 @@ def main():
                 print("\n=== Skill Commands (loads skill prompt dynamically) ===")
                 for s in skills:
                     print(f"  /{s['name']:<14} - {s['description']}")
+
+            print("\n=== Command Usage Examples ===")
+            print("  /plugin add https://github.com/JuliusBrussee/caveman")
+            print("  /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices")
+            print("  /plugin remove caveman")
+            print("  /pin Always write type hints for functions")
+            print("  /unpin 1")
+            print("  /max_tool_calls 50")
+            print("  /diff src/agent/main.py")
+            print("  /export ./exports/my_chat.md")
+            print("  /switch 3")
             print()
             continue
 
@@ -100,7 +118,11 @@ def main():
                 conversation_history = loaded
                 print(f"Switched to session [{current_session_id}] with {len(conversation_history)} message(s)\n")
             else:
-                print(f"Session '{target}' not found. Use '/sessions' to see available chats.\n")
+                if not target:
+                    print("Usage: /switch <session_id>  (e.g. '/switch 3'). Use '/sessions' to see available chats.\n")
+                else:
+                    print(f"Session '{target}' not found. Use '/sessions' to see available chats.\n")
+            continue
         if user_input.lower().startswith("/delete_session"):
             target = user_input[15:].strip()
             if target.isdigit() and db.session_exists(int(target)):
@@ -229,9 +251,21 @@ def main():
                 result_msg = plugin_manager.remove_plugin(skill_to_remove)
                 print(f"\n{result_msg}\n")
             else:
-                print("Usage:")
+                print("=== Plugin Management Usage ===")
                 print("  /plugin add <repository_url> [--skill <skill_name>]")
                 print("  /plugin remove [skill_name]\n")
+                print("Examples:")
+                print("  # Install all skills from a GitHub repository:")
+                print("  /plugin add https://github.com/JuliusBrussee/caveman")
+                print()
+                print("  # Install a specific skill from a multi-skill repository:")
+                print("  /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices")
+                print()
+                print("  # Interactively list and remove installed skills:")
+                print("  /plugin remove")
+                print()
+                print("  # Remove a specific skill plugin by name:")
+                print("  /plugin remove caveman\n")
             continue
 
         if user_input.lower().startswith("/model"):
@@ -249,16 +283,16 @@ def main():
             if len(parts) > 1:
                 arg = parts[1].lower()
                 if arg in ['on', 'true', '1']:
-                    config.READ_ONLY_MODE = True
+                    config.set_read_only_mode(True)
                 elif arg in ['off', 'false', '0']:
-                    config.READ_ONLY_MODE = False
+                    config.set_read_only_mode(False)
                 elif arg == 'status':
                     pass
                 else:
                     print("Usage: /readonly [on|off|status]\n")
                     continue
             else:
-                config.READ_ONLY_MODE = not config.READ_ONLY_MODE
+                config.set_read_only_mode(not config.READ_ONLY_MODE)
 
             CYAN = "\033[1;36m"
             GREEN = "\033[1;32m"
@@ -287,16 +321,16 @@ def main():
             if len(parts) > 1:
                 arg = parts[1].lower()
                 if arg in ['on', 'true', '1']:
-                    config.ENTER_2_CONFIRM = True
+                    config.set_enter_2_confirm(True)
                 elif arg in ['off', 'false', '0']:
-                    config.ENTER_2_CONFIRM = False
+                    config.set_enter_2_confirm(False)
                 elif arg == 'status':
                     pass
                 else:
                     print("Usage: /enter2confirm [on|off|status]\n")
                     continue
             else:
-                config.ENTER_2_CONFIRM = not config.ENTER_2_CONFIRM
+                config.set_enter_2_confirm(not config.ENTER_2_CONFIRM)
 
             CYAN = "\033[1;36m"
             GREEN = "\033[1;32m"
@@ -305,52 +339,130 @@ def main():
             print(f"  [System]: Double-Enter Confirmation is now {status_text}\n")
             continue
 
+        if user_input.lower() == "/pins":
+            pinned_items = db.load_pinned_memory_with_ids()
+            if not pinned_items:
+                print("  [System]: No pinned Core Memory rules found.\n")
+            else:
+                print("=== Pinned Core Memory Rules ===")
+                for item in pinned_items:
+                    print(f"  [{item['id']}] {item['text']}")
+                print()
+            continue
+
+        if user_input.lower().startswith("/pin"):
+            parts = user_input.split(maxsplit=1)
+            rule_text = parts[1].strip() if len(parts) > 1 else ""
+            if not rule_text:
+                print("Usage: /pin <rule_text>  (e.g. '/pin Always use type hints')\n")
+                continue
+            db.save_memory_fact(rule_text, source_session_id=current_session_id, is_pinned=True)
+            SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
+            if conversation_history and conversation_history[0].get("role") == "system":
+                conversation_history[0]["content"] = SYSTEM_PROMPT
+            print(f"  [System]: Pinned to Core Memory: '{rule_text}'\n")
+            continue
+
+        if user_input.lower().startswith("/unpin"):
+            parts = user_input.split(maxsplit=1)
+            target = parts[1].strip() if len(parts) > 1 else ""
+            if not target:
+                print("Error: Please specify an ID or fact text to unpin, e.g. '/unpin 1'\n")
+                continue
+            success = db.delete_pinned_fact(target)
+            if success:
+                SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
+                if conversation_history and conversation_history[0].get("role") == "system":
+                    conversation_history[0]["content"] = SYSTEM_PROMPT
+                print(f"  [System]: Successfully unpinned Core Memory item [{target}]\n")
+            else:
+                print(f"  [System]: Could not find pinned Core Memory item matching '{target}'\n")
+            continue
+
+        if user_input.lower().startswith("/export"):
+            parts = user_input.split(maxsplit=1)
+            path_arg = parts[1].strip() if len(parts) > 1 else None
+            success, result_path = export_utils.export_session_to_markdown(current_session_id, custom_filepath=path_arg)
+            if success:
+                print(f"  [System]: Successfully exported chat session to: {result_path}\n")
+            else:
+                print(f"  [System]: Export failed - {result_path}\n")
+            continue
+
+        if user_input.lower() in ["/clear", "clear"]:
+            os.system("cls" if os.name == "nt" else "clear")
+            model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
+            project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
+            print_banner(model_display, project_path)
+            print(f"Current session: [{current_session_id}]")
+            print("Commands: '/new <title>' new chat | '/sessions' list chats | '/switch <id>' change chat | '/help' help menu | '/exit' or '/quit' to leave.\n")
+            continue
+
+        if user_input.lower().startswith(("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call")):
+            parts = user_input.split()
+            if len(parts) > 1 and parts[1].isdigit():
+                new_val = int(parts[1])
+                if new_val > 0:
+                    config.set_max_tool_calls(new_val)
+                    print(f"  [System]: MAX_TOOL_CALLS limit updated and persisted to {new_val}\n")
+                else:
+                    print("Error: Please provide a positive integer greater than 0.\n")
+            else:
+                print(f"  [System]: Current MAX_TOOL_CALLS limit is {config.MAX_TOOL_CALLS}.\n")
+                print("Usage: /max_tool_calls <number>  (e.g. '/max_tool_calls 50')\n")
+            continue
+
         if user_input.lower().startswith("/search"):
             query = user_input[7:].strip()
             if not query:
                 print("Error: Please provide a query to search, e.g. '/search python 3.14 features'\n")
                 continue
-            
+
             # Inject system guide forcing the agent to use web search, then append user message
             conversation_history.append({
                 "role": "system",
                 "content": "CRITICAL: The user wants to search the web. You MUST execute the 'web_search' tool on the query provided below to answer their question."
             })
             db.save_message(current_session_id, "system", "CRITICAL: The user wants to search the web. You MUST execute the 'web_search' tool on the query provided below to answer their question.")
-            
+
             user_msg = query
             conversation_history.append({"role": "user", "content": user_msg})
             db.save_message(current_session_id, "user", user_msg)
             is_skill_cmd = True  # Treat as a skill command so it falls through to the Agent call loop
-            
+
         else:
             is_skill_cmd = False
 
         # Check for dynamic skill command (e.g. /unit-testing <query>)
         command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm'}
-        if not is_skill_cmd and user_input.startswith("/") and command not in reserved_commands:        
-            parts = user_input.split(maxsplit=1)
-            cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'
-            query = parts[1].strip() if len(parts) > 1 else ""
+        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear', '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call'}
+        if not is_skill_cmd and user_input.startswith("/"):
+            if command not in reserved_commands:
+                parts = user_input.split(maxsplit=1)
+                cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'
+                query = parts[1].strip() if len(parts) > 1 else ""
 
-            matching_skills = [s for s in skills if s["name"].lower() == cmd_name]
-            if matching_skills:
-                skill = matching_skills[0]
-                print(f"  [System]: Invoking skill '{skill['name']}'...")
-                skill_content = skills_loader.read_skill(skill["name"])
+                matching_skills = [s for s in skills if s["name"].lower() == cmd_name]
+                if matching_skills:
+                    skill = matching_skills[0]
+                    print(f"  [System]: Invoking skill '{skill['name']}'...")
+                    skill_content = skills_loader.read_skill(skill["name"])
 
-                # Load instruction into context & DB as a system guide
-                conversation_history.append({
-                    "role": "system",
-                    "content": f"[Invoked Skill Instructions: {skill['name']}]\n{skill_content}"
-                })
-                db.save_message(current_session_id, "system", f"[Invoked Skill: {skill['name']}]\n{skill_content}")
+                    # Load instruction into context & DB as a system guide
+                    conversation_history.append({
+                        "role": "system",
+                        "content": f"[Invoked Skill Instructions: {skill['name']}]\n{skill_content}"
+                    })
+                    db.save_message(current_session_id, "system", f"[Invoked Skill: {skill['name']}]\n{skill_content}")
 
-                user_msg = query if query else f"I want you to use the '{skill['name']}' skill."
-                conversation_history.append({"role": "user", "content": user_msg})
-                db.save_message(current_session_id, "user", user_msg)
-                is_skill_cmd = True
+                    user_msg = query if query else f"I want you to use the '{skill['name']}' skill."
+                    conversation_history.append({"role": "user", "content": user_msg})
+                    db.save_message(current_session_id, "user", user_msg)
+                    is_skill_cmd = True
+                else:
+                    # Unknown command typed! Do NOT send to AI, display helpful warning
+                    print(f"  [System]: Unknown slash command '{command}'. Type '/help' to see available commands.\n")
+                    continue
 
         # Check for @filepath mentions in user input
         mentioned_files = mention_utils.extract_file_mentions(user_input)

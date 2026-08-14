@@ -54,33 +54,52 @@ def get_or_prompt_key(env_name: str, display_name: str) -> str:
     return user_val
 
 
+def save_global_config():
+    """Helper function to save global_config dictionary to ~/.losnarc."""
+    try:
+        with open(home_config_path, "w", encoding="utf-8") as f:
+            json.dump(global_config, f, indent=4)
+    except Exception as e:
+        print(f"\033[1;31mFailed to save config globally: {e}\033[0m")
+
+
 # --- Configurations ---
+try:
+    import importlib.metadata
+    VERSION = importlib.metadata.version("losna-cli")
+except Exception:
+    VERSION = "0.3.0"
+
 MODEL_NAME = global_config.get("MODEL_NAME", "deepseek/deepseek-v4-flash")
 COMPACTION_MODEL = "google/gemini-2.5-flash-lite"
-READ_ONLY_MODE = False
-ENTER_2_CONFIRM = False
+READ_ONLY_MODE = global_config.get("READ_ONLY_MODE", False)
+ENTER_2_CONFIRM = global_config.get("ENTER_2_CONFIRM", False)
 
 
 def set_read_only_mode(enabled: bool):
     """
-    Toggles the Read-Only Mode setting.
+    Toggles the Read-Only Mode setting and persists to ~/.losnarc.
 
     Args:
         enabled (bool): True to enable Read-Only Mode, False to disable.
     """
     global READ_ONLY_MODE
     READ_ONLY_MODE = enabled
+    global_config["READ_ONLY_MODE"] = enabled
+    save_global_config()
 
 
 def set_enter_2_confirm(enabled: bool):
     """
-    Toggles the Double-Enter Confirmation setting.
+    Toggles the Double-Enter Confirmation setting and persists to ~/.losnarc.
 
     Args:
         enabled (bool): True to require pressing Enter twice to send prompts, False to disable.
     """
     global ENTER_2_CONFIRM
     ENTER_2_CONFIRM = enabled
+    global_config["ENTER_2_CONFIRM"] = enabled
+    save_global_config()
 
 
 def update_model_name(new_model_name: str):
@@ -107,7 +126,21 @@ RETRY_DELAY = 2
 # Memory management parameters
 MAX_ACTIVE_MESSAGES = 25
 KEEP_RECENT = 4
-MAX_TOOL_CALLS = 25
+MAX_TOOL_CALLS = global_config.get("MAX_TOOL_CALLS", 25)
+
+
+def set_max_tool_calls(limit: int):
+    """
+    Sets the MAX_TOOL_CALLS limit per turn and persists to ~/.losnarc.
+
+    Args:
+        limit (int): Maximum number of tool calls allowed per turn.
+    """
+    global MAX_TOOL_CALLS
+    MAX_TOOL_CALLS = limit
+    global_config["MAX_TOOL_CALLS"] = limit
+    save_global_config()
+
 
 # Dynamically resolve keys
 # OpenRouter is required, so we prompt if missing

@@ -74,6 +74,10 @@ class PromptCompleter(Completer):
                 pass
 
 
+# Backward-compatibility alias
+SlashCompleter = PromptCompleter
+
+
 class Spinner:
     """
     Threaded terminal progress spinner with rotating moon phase indicators.
@@ -88,34 +92,64 @@ class Spinner:
         """
         self.message = message
         # Moon phases sequence rotating clockwise
-        self.frames = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
-        self.stop_running = False
+        self.spinner_chars = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+        self.stop_event = threading.Event()
         self.thread = None
+
+    def _spin(self):
+        """Internal animation loop executing in background thread."""
+        idx = 0
+        frames = [" .", " . -", " . - *", " *", " * -", " * - .", ""]
+        max_len = max(len(f) for f in frames)
+
+        # ANSI Colors for Esc prompt
+        RED = "\033[1;31m"
+        GRAY = "\033[38;5;244m"
+        RESET = "\033[0m"
+        esc_hint = f" {GRAY}({RED}Press [Esc] to cancel{GRAY}){RESET}"
+
+        while not self.stop_event.is_set():
+            # Check for Esc key press on Windows
+            if os.name == 'nt':
+                try:
+                    import msvcrt
+                    if msvcrt.kbhit():
+                        ch = msvcrt.getch()
+                        if ch in (b'\x1b', b'\x03'):  # ESC key or Ctrl+C
+                            import _thread
+                            self.stop_event.set()
+                            sys.stdout.write("\r" + " " * 80 + "\r")
+                            sys.stdout.flush()
+                            _thread.interrupt_main()
+                            break
+                except Exception:
+                    pass
+
+            char = self.spinner_chars[idx % len(self.spinner_chars)]
+            frame = frames[idx % len(frames)]
+            pad = " " * (max_len - len(frame))
+            sys.stdout.write(f"\r  [{char}] {self.message}{frame}{pad}{esc_hint} ")
+            sys.stdout.flush()
+            idx += 1
+            self.stop_event.wait(0.25)
+
+        sys.stdout.write("\r" + " " * 80 + "\r")
+        sys.stdout.flush()
 
     def start(self):
         """Starts the spinner animation in a background thread."""
-        self.stop_running = False
-        self.thread = threading.Thread(target=self._animate, daemon=True)
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._spin, daemon=True)
         self.thread.start()
-
-    def _animate(self):
-        """Internal animation loop executing in background thread."""
-        idx = 0
-        while not self.stop_running:
-            frame = self.frames[idx % len(self.frames)]
-            sys.stdout.write(f"\r{frame} {self.message}...")
-            sys.stdout.flush()
-            time.sleep(0.12)
-            idx += 1
 
     def stop(self):
         """Stops the spinner animation and clears the line."""
-        self.stop_running = True
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=0.5)
-        # Clear the terminal line completely
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+        self.stop_event.set()
+        if self.thread:
+            try:
+                self.thread.join(timeout=0.5)
+            except Exception:
+                pass
 
 
 # Custom styles for the CLI prompt and autocomplete dropdown menu
@@ -123,13 +157,27 @@ custom_style = Style.from_dict({
     'prompt': 'fg:#00ff88 bold',                # Neon green for "You" text
     'pointer': 'fg:#00bfff bold',               # Cyan for "❯" pointer
     'confirm': 'fg:#5c6370 italic',             # Dim gray italic hint for confirmation prompt
-    'completion-menu.completion': 'bg:#2c313c #abb2bf', # Dark slate background, soft white text
-    'completion-menu.completion.current': 'bg:#00ff88 #000000 bold', # Neon green background, black text when highlighted
+    'completion-menu.completion': 'bg:#2c313c #abb2bf',  # Dark slate background, soft white text
+    'completion-menu.completion.current': 'bg:#00ff88 #000000 bold',  # Neon green background, black text when highlighted
     'auto-suggest': 'fg:#5c6370 italic',        # Dim gray italic text for autosuggestions
 })
 
-# Instantiate the PromptSession once at the module level with auto_suggest enabled
-prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory())
+_prompt_session = None
+
+
+def get_prompt_session():
+    """
+    Lazily instantiates PromptSession to prevent NoConsoleScreenBufferError
+    when running under non-interactive test harnesses.
+    """
+    global _prompt_session
+    if _prompt_session is None:
+        try:
+            _prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory())
+        except Exception:
+            from prompt_toolkit.output import DummyOutput
+            _prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory(), output=DummyOutput())
+    return _prompt_session
 
 
 def get_user_input(skills):
@@ -141,15 +189,16 @@ def get_user_input(skills):
         skills (list[dict]): List of dicts representing available skills, e.g. [{"name": ...}]
 
     Returns:
-        str: The typed input string, or "/exit" on Ctrl+D / Ctrl+C.
+        str: The typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/max_tool_calls']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = PromptCompleter(words)
+    ps = get_prompt_session()
 
     try:
-        user_text = prompt_session.prompt(
+        user_text = ps.prompt(
             HTML('<prompt>You</prompt><pointer> ❯ </pointer>'),
             completer=completer
         ).strip()
@@ -163,7 +212,7 @@ def get_user_input(skills):
 
         # Require double Enter confirmation only when ENTER_2_CONFIRM is enabled
         if config.ENTER_2_CONFIRM:
-            confirm_text = prompt_session.prompt(
+            confirm_text = ps.prompt(
                 HTML('<confirm>(Press Enter again to send to AI, or edit text)</confirm><pointer> ❯ </pointer>'),
                 default=user_text,
                 completer=completer
@@ -187,30 +236,33 @@ def print_banner(model_name, project_path):
         model_name (str): Active OpenRouter model name.
         project_path (str): Current workspace directory path.
     """
+    P1 = "\033[38;5;97m"                           # Soft Muted Purple
+    P2 = "\033[38;5;98m"                           # Soft Lavender Purple
+    P3 = "\033[38;5;140m"                          # Soft Lilac Violet
+    P4 = "\033[38;5;141m"                          # Soft Light Violet Glow
     GOLD = "\033[38;5;220m"
     AMBER = "\033[38;5;214m"
-    PURPLE = "\033[38;5;97m"                      # Soft cosmic purple for the dark side
     LIGHT_BLUE = "\033[1;38;5;75m"
     WHITE = "\033[38;5;253m"
     GRAY = "\033[38;5;244m"
     RESET = "\033[0m"
 
-    # Logo: 🌒 Waxing Crescent
+    # Logo: 🌒 Waxing Crescent with Smooth Soft Purple Gradient (97 -> 98 -> 140 -> 141)
     visual_logo = [
-        f"        {PURPLE}.%%%%{GOLD}**.{RESET}        ",
-        f"      {PURPLE}%%o%%%%%{GOLD}%**.{RESET}       ",
-        f"     {PURPLE}%%%%%0%%%%{AMBER}%%*{GOLD}*{RESET}      ",
-        f"    {PURPLE}####o#######{AMBER}%+{GOLD}**{RESET}     ",
-        f"    {PURPLE}#######0####{AMBER}%+{GOLD}**{RESET}     ",
-        f"     {PURPLE}%%%%o%%%%%{AMBER}%%*{GOLD}*{RESET}      ",
-        f"      {PURPLE}%%%%%%%%%{GOLD}%**{RESET}      ",
-        f"        {PURPLE}'%%%%{GOLD}**'{RESET}        ",
+        f"        {P1}.{P2}%{P3}%{P4}%{GOLD}**.{RESET}        ",
+        f"      {P1}%{P2}%o{P3}%%{P4}%%{GOLD}%**.{RESET}       ",
+        f"     {P1}%%{P2}%%{P3}0%{P4}%%%{AMBER}%%*{GOLD}*{RESET}      ",
+        f"    {P1}##{P2}##{P3}o#{P4}#####{AMBER}%+{GOLD}**{RESET}     ",
+        f"    {P1}##{P2}###{P3}#{P4}0####{AMBER}%+{GOLD}**{RESET}     ",
+        f"     {P1}%%{P2}%%{P3}o%{P4}%%%{AMBER}%%*{GOLD}*{RESET}      ",
+        f"      {P1}%{P2}%%{P3}%%{P4}%%%{GOLD}%**{RESET}      ",
+        f"        {P1}'{P2}%{P3}%{P4}%{GOLD}**'{RESET}        ",
     ]
     # Text lines on the right side
     text_lines = [
         "",
         "",
-        f"{LIGHT_BLUE}Losna CLI 0.3.0{RESET}",
+        f"{LIGHT_BLUE}Losna CLI {config.VERSION}{RESET}",
         f"{WHITE}{model_name}{RESET}",
         f"{GRAY}{project_path}{RESET}",
     ]

@@ -2,7 +2,6 @@
 Unit tests for /enter2confirm slash command and configuration toggle.
 """
 
-import pytest
 from src.agent import config
 
 
