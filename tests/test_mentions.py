@@ -12,10 +12,9 @@ class TestMentionUtils:
         text = "Check out @README.md and @src/agent/main.py for details."
 
         with patch("os.path.isfile", return_value=True):
-            with patch("os.path.realpath", side_effect=lambda x: f"/project/{x}"):
-                mentions = mention_utils.extract_file_mentions(text)
-                assert "README.md" in mentions
-                assert "src/agent/main.py" in mentions
+            mentions = mention_utils.extract_file_mentions(text)
+            assert "README.md" in mentions
+            assert "src/agent/main.py" in mentions
 
     def test_extract_file_mentions_non_existent(self):
         text = "Check out @non_existent_file.py please."
@@ -29,14 +28,16 @@ class TestMentionUtils:
         m_open = mock_open(read_data=sample_content)
 
         with patch("builtins.open", m_open):
-            attachments = mention_utils.load_file_attachments(["test.py"])
+            attachments = mention_utils.load_file_attachments(["README.md"])
             assert len(attachments) == 1
-            assert attachments[0]["path"] == "test.py"
+            assert attachments[0]["path"] == "README.md"
             assert attachments[0]["content"] == sample_content
 
     def test_build_mention_prompt_block(self):
-        attachments = [{"path": "hello.txt", "content": "Hi star"}]
+        attachments = [
+            {"path": "README.md", "content": "# Losna CLI"}
+        ]
         block = mention_utils.build_mention_prompt_block(attachments)
-        assert "[Attached File Context from @mentions]:" in block
-        assert "hello.txt" in block
-        assert "Hi star" in block
+        assert "[Attached File Context]" in block
+        assert "File: @README.md" in block
+        assert "# Losna CLI" in block

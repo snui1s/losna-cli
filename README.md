@@ -133,10 +133,13 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 
 ### 💡 Slash Command Examples
 ```bash
-# Plugin Management
+# Plugin & Skill Management
 /plugin add https://github.com/JuliusBrussee/caveman
-/plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
-/plugin remove caveman
+/plugin disable caveman
+/plugin enable caveman
+/plugin list
+/caveman off
+/caveman on
 
 # Core Memory & Rule Pinning
 /pin Always write type hints and docstrings for functions

@@ -193,3 +193,13 @@ class TestSlashCommands:
 
         # Reset back
         config.set_max_tool_calls(original_val)
+
+    # --- 17. Skill Enable / Disable Toggle ---
+    def test_skill_enable_disable_toggle(self):
+        skill_name = "caveman"
+
+        config.disable_skill(skill_name)
+        assert config.is_skill_disabled(skill_name) is True
+
+        config.enable_skill(skill_name)
+        assert config.is_skill_disabled(skill_name) is False

@@ -205,7 +205,7 @@ def main():
             continue
         if user_input.lower().startswith("/plugin"):
             parts = user_input.split()
-            # Expected syntax: /plugin add <repo_url> [--skill <name>] OR /plugin remove <name>
+            # Expected syntax: /plugin add <repo_url> [--skill <name>] OR /plugin remove <name> OR /plugin enable|disable|list
             if len(parts) >= 3 and parts[1].lower() == "add":
                 repo_url = parts[2]
                 skill_name = None
@@ -220,6 +220,31 @@ def main():
                 print(f"  [System]: Attempting to install plugin...")
                 result_msg = plugin_manager.install_plugin(repo_url, skill_name)
                 print(f"\n{result_msg}\n")
+            elif len(parts) >= 2 and parts[1].lower() == "enable":
+                if len(parts) >= 3:
+                    sk = parts[2].strip().lstrip("/")
+                    config.enable_skill(sk)
+                    print(f"  \033[1;32m[System]: Skill '{sk}' is now ENABLED.\033[0m\n")
+                else:
+                    print("Usage: /plugin enable <skill_name>\n")
+            elif len(parts) >= 2 and parts[1].lower() == "disable":
+                if len(parts) >= 3:
+                    sk = parts[2].strip().lstrip("/")
+                    config.disable_skill(sk)
+                    print(f"  \033[1;33m[System]: Skill '{sk}' is now DISABLED.\033[0m\n")
+                else:
+                    print("Usage: /plugin disable <skill_name>\n")
+            elif len(parts) >= 2 and parts[1].lower() == "list":
+                current_skills = skills_loader.list_skills()
+                if not current_skills:
+                    print("  [System]: No plugins/skills are currently installed.\n")
+                else:
+                    print("=== Installed Plugins/Skills ===")
+                    for idx, s in enumerate(current_skills, start=1):
+                        is_dis = config.is_skill_disabled(s['name'])
+                        status = "\033[1;31m[DISABLED]\033[0m" if is_dis else "\033[1;32m[ENABLED]\033[0m"
+                        print(f"  [{idx}] /{s['name']:<14} {status} - {s['description']}")
+                    print()
             elif len(parts) >= 2 and parts[1].lower() == "remove":
                 skill_to_remove = parts[2] if len(parts) >= 3 else None
                 
@@ -253,19 +278,13 @@ def main():
             else:
                 print("=== Plugin Management Usage ===")
                 print("  /plugin add <repository_url> [--skill <skill_name>]")
-                print("  /plugin remove [skill_name]\n")
+                print("  /plugin enable <skill_name>  |  /plugin disable <skill_name>")
+                print("  /plugin list                |  /plugin remove [skill_name]\n")
                 print("Examples:")
-                print("  # Install all skills from a GitHub repository:")
                 print("  /plugin add https://github.com/JuliusBrussee/caveman")
-                print()
-                print("  # Install a specific skill from a multi-skill repository:")
-                print("  /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices")
-                print()
-                print("  # Interactively list and remove installed skills:")
-                print("  /plugin remove")
-                print()
-                print("  # Remove a specific skill plugin by name:")
-                print("  /plugin remove caveman\n")
+                print("  /plugin disable caveman  (or '/caveman off')")
+                print("  /plugin enable caveman   (or '/caveman on')")
+                print("  /plugin list\n")
             continue
 
         if user_input.lower().startswith("/model"):
@@ -445,6 +464,28 @@ def main():
                 matching_skills = [s for s in skills if s["name"].lower() == cmd_name]
                 if matching_skills:
                     skill = matching_skills[0]
+                    sub_arg = query.strip().lower()
+
+                    # Handle direct toggle subcommands: /<skill> off|disable|on|enable|status
+                    if sub_arg in ["off", "disable", "disabled", "0"]:
+                        config.disable_skill(skill["name"])
+                        print(f"  \033[1;33m[System]: Skill '{skill['name']}' is now DISABLED.\033[0m\n")
+                        continue
+                    elif sub_arg in ["on", "enable", "enabled", "1"]:
+                        config.enable_skill(skill["name"])
+                        print(f"  \033[1;32m[System]: Skill '{skill['name']}' is now ENABLED.\033[0m\n")
+                        continue
+                    elif sub_arg in ["status"]:
+                        status_str = "\033[1;31mDISABLED\033[0m" if config.is_skill_disabled(skill["name"]) else "\033[1;32mENABLED\033[0m"
+                        print(f"  [System]: Skill '{skill['name']}' is currently {status_str}.\n")
+                        continue
+
+                    # If skill is disabled, block execution
+                    if config.is_skill_disabled(skill["name"]):
+                        print(f"  \033[1;31m[System]: Skill '{skill['name']}' is currently DISABLED.\033[0m")
+                        print(f"  Type '/{skill['name']} on' or '/plugin enable {skill['name']}' to enable it.\n")
+                        continue
+
                     print(f"  [System]: Invoking skill '{skill['name']}'...")
                     skill_content = skills_loader.read_skill(skill["name"])
 
