@@ -30,7 +30,7 @@ def main():
     # Print the customized Losna CLI gold crescent moon banner
     print_banner(model_display, project_path)
     print(f"Current session: [{current_session_id}]")
-    print("Commands: '/new <title>' new chat | '/sessions' list chats | '/switch <id>' change chat | '/help' help menu | '/exit' or '/quit' to leave.\n")
+    print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
 
     # --- Main Conversation Loop ---
 
@@ -65,6 +65,9 @@ def main():
             print("  /unpin <id>    - Unpin/remove a Core Memory rule by ID")
             print("  /export [path] - Export current chat session history to a Markdown document")
             print("  /clear         - Clear terminal screen and re-render header banner")
+            print("  /ls [path]     - List directory files and folders in clean formatted view")
+            print("  /cd <path>     - Change working directory (supports '..', '~', and '-')")
+            print("  @<filepath>    - Attach local file content directly into AI context (e.g. '@README.md')")
             print("  /max_tool_calls [n] - View or set max tool calls limit per turn (persisted in ~/.losnarc)")
             print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
             print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
@@ -76,6 +79,7 @@ def main():
                     print(f"  /{s['name']:<14} - {s['description']}")
 
             print("\n=== Command Usage Examples ===")
+            print("  @src/agent/main.py Summarize what this file does")
             print("  /plugin add https://github.com/JuliusBrussee/caveman")
             print("  /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices")
             print("  /plugin remove caveman")
@@ -414,7 +418,7 @@ def main():
             project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
             print_banner(model_display, project_path)
             print(f"Current session: [{current_session_id}]")
-            print("Commands: '/new <title>' new chat | '/sessions' list chats | '/switch <id>' change chat | '/help' help menu | '/exit' or '/quit' to leave.\n")
+            print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
             continue
 
         if user_input.lower().startswith(("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call")):
@@ -429,6 +433,76 @@ def main():
             else:
                 print(f"  [System]: Current MAX_TOOL_CALLS limit is {config.MAX_TOOL_CALLS}.\n")
                 print("Usage: /max_tool_calls <number>  (e.g. '/max_tool_calls 50')\n")
+            continue
+
+        if user_input.lower().startswith(("/ls", "ls")):
+            parts = user_input.split(maxsplit=1)
+            target_path = parts[1].strip() if len(parts) > 1 else "."
+
+            abs_target = os.path.abspath(target_path)
+            if not os.path.exists(abs_target):
+                print(f"Error: Directory or file '{target_path}' does not exist.\n")
+                continue
+
+            if os.path.isfile(abs_target):
+                size = os.path.getsize(abs_target)
+                print(f"  📄 {os.path.basename(abs_target)} ({size:,} bytes)\n")
+                continue
+
+            try:
+                items = sorted(os.listdir(abs_target))
+                rel_path = os.path.relpath(abs_target, os.getcwd()).replace("\\", "/")
+                display_path = "." if rel_path == "." else f"./{rel_path}"
+                print(f"=== Directory Listing: {display_path} ===")
+
+                dirs = []
+                files = []
+                for item in items:
+                    if item.startswith(".") and item not in [".env", ".losnarc"]:
+                        continue
+                    full_item = os.path.join(abs_target, item)
+                    if os.path.isdir(full_item):
+                        dirs.append(f"  \033[1;36m📁 {item}/\033[0m")
+                    else:
+                        size = os.path.getsize(full_item)
+                        files.append(f"  \033[38;5;253m📄 {item}\033[0m \033[38;5;244m({size:,} bytes)\033[0m")
+
+                for d in dirs:
+                    print(d)
+                for f in files:
+                    print(f)
+                if not dirs and not files:
+                    print("  (directory is empty)")
+                print()
+            except Exception as e:
+                print(f"Error reading directory: {e}\n")
+            continue
+
+        if user_input.lower().startswith(("/cd", "cd ")):
+            parts = user_input.split(maxsplit=1)
+            target = parts[1].strip() if len(parts) > 1 else config.PROJECT_ROOT
+
+            if target == "~":
+                target = os.path.expanduser("~")
+            elif target == "-":
+                target = getattr(config, "_PREV_PWD", config.PROJECT_ROOT)
+
+            try:
+                abs_target = os.path.abspath(target)
+                if not os.path.exists(abs_target):
+                    print(f"Error: Directory '{target}' does not exist.\n")
+                    continue
+                if not os.path.isdir(abs_target):
+                    print(f"Error: Path '{target}' is a file, not a directory.\n")
+                    continue
+
+                config._PREV_PWD = os.getcwd()
+                os.chdir(abs_target)
+                rel_path = os.path.relpath(abs_target, config.PROJECT_ROOT).replace("\\", "/")
+                display_path = "." if rel_path == "." else f"./{rel_path}"
+                print(f"  \033[1;32m[System]: Changed working directory to: {display_path}\033[0m  ({abs_target})\n")
+            except Exception as e:
+                print(f"Error changing directory: {e}\n")
             continue
 
         if user_input.lower().startswith("/search"):
@@ -454,7 +528,7 @@ def main():
 
         # Check for dynamic skill command (e.g. /unit-testing <query>)
         command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear', '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call'}
+        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear', '/ls', 'ls', '/cd', 'cd', '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call'}
         if not is_skill_cmd and user_input.startswith("/"):
             if command not in reserved_commands:
                 parts = user_input.split(maxsplit=1)

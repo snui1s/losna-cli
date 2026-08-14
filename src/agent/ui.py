@@ -73,6 +73,52 @@ class PromptCompleter(Completer):
             except Exception:
                 pass
 
+        # 3. Dynamic directory autocompletion when typing '/cd ' or '/ls '
+        clean_text = text_before.lstrip()
+        if clean_text.startswith(('/cd ', '/ls ')):
+            parts = clean_text.split(maxsplit=1)
+            path_part = parts[1] if len(parts) > 1 else ""
+
+            if not path_part:
+                target_dir = os.getcwd()
+                search_prefix = ""
+                replace_len = 0
+            else:
+                raw_path = path_part.replace("\\", "/")
+                if raw_path.endswith("/"):
+                    target_dir = os.path.abspath(raw_path)
+                    search_prefix = ""
+                    replace_len = 0
+                else:
+                    target_dir = os.path.dirname(os.path.abspath(raw_path))
+                    search_prefix = os.path.basename(raw_path)
+                    replace_len = len(search_prefix)
+
+            try:
+                if os.path.exists(target_dir) and os.path.isdir(target_dir):
+                    candidates = []
+                    if ".." .startswith(search_prefix.lower()):
+                        candidates.append("..")
+
+                    for item in sorted(os.listdir(target_dir)):
+                        if item.startswith(".") and item not in [".env", ".losnarc"]:
+                            continue
+                        full_item = os.path.join(target_dir, item)
+                        if os.path.isdir(full_item):
+                            if item.lower().startswith(search_prefix.lower()):
+                                candidates.append(item)
+
+                    for cand in candidates:
+                        display_str = f"📁 {cand}/" if cand != ".." else "📁 ../"
+                        completion_val = f"{cand}/" if cand != ".." else "../"
+                        yield Completion(
+                            completion_val,
+                            start_position=-replace_len,
+                            display=display_str
+                        )
+            except Exception:
+                pass
+
 
 # Backward-compatibility alias
 SlashCompleter = PromptCompleter
@@ -191,7 +237,7 @@ def get_user_input(skills):
     Returns:
         str: The typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/max_tool_calls']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd', '/max_tool_calls']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = PromptCompleter(words)

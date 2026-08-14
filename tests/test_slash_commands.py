@@ -203,3 +203,41 @@ class TestSlashCommands:
 
         config.enable_skill(skill_name)
         assert config.is_skill_disabled(skill_name) is False
+
+    # --- 18. /ls Command ---
+    def test_ls_command_autocomplete(self):
+        words = ['/ls', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/l"
+        doc.get_word_before_cursor.return_value = "/l"
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "/ls" in completion_texts
+
+    # --- 19. /cd Command ---
+    def test_cd_command_autocomplete(self):
+        words = ['/cd', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/c"
+        doc.get_word_before_cursor.return_value = "/c"
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "/cd" in completion_texts
+
+    def test_cd_directory_autocompletion(self):
+        words = ['/cd', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/cd "
+        doc.get_word_before_cursor.return_value = ""
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "src/" in completion_texts or "tests/" in completion_texts
