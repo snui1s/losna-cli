@@ -126,6 +126,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/clear` | Clear terminal screen and re-render header banner |
 | `/ls [path]` | List directory files and folders in clean formatted view |
 | `/cd <path>` | Change working directory (supports '..', '~', and '-') |
+| `/init-ai` | Generate a starter 'ai.txt' blueprint file for project auto-detection |
 | `/max_tool_calls [n]` | View or set maximum tool call limit per turn (persisted in ~/.losnarc) |
 | `/plugin add <url>` | Download and install all skills from a GitHub repository |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
@@ -136,6 +137,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 ### 💡 Slash Command Examples
 ```bash
 # File Context & Workspace Inspection
+/init-ai
 @src/agent/main.py Summarize this file
 /ls
 /ls src/agent

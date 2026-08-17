@@ -1,0 +1,27 @@
+# Project AI Blueprint: Losna CLI
+
+## Core Overview
+Losna CLI is an intelligent terminal-native AI agent harness built with Python 3.10+, prompt_toolkit, and OpenRouter API. It supports multi-tab session persistence, local tool execution, custom skill plugins, and file mentions.
+
+## Architecture & Core Modules
+- `src/agent/main.py`: CLI entry point, session switcher, slash command handler, and main LLM execution loop.
+- `src/agent/config.py`: Global configuration manager & `~/.losnarc` persistence (`MAX_TOOL_CALLS`, `DISABLED_SKILLS`, `READ_ONLY_MODE`).
+- `src/agent/prompts.py`: System prompt builder with prefix caching, skills integration, and auto-loaded `ai.txt` context.
+- `src/agent/ui.py`: Rich terminal interface, prompt_toolkit interactive session, and `PromptCompleter` (autocompletes `/` commands, `@` files, `/cd` & `/ls` folder paths).
+- `src/agent/db.py`: SQLite storage for sessions, chat logs, tool outputs, and pinned core memory facts.
+- `src/agent/tools.py`: Local tool execution layer (`read_file`, `write_to_file`, `run_command`, `search_in_files`, `list_directory`).
+- `src/agent/mention_utils.py`: Mentions parser resolving `@filepath` tokens into context prompt attachments.
+- `src/agent/skills_loader.py`: Plugin & skill loader for local `.skills/` and GitHub repositories.
+
+## Slash Commands & Features
+- Navigation & Inspection: `/ls [path]`, `/cd <path>`, `@filepath` mentions.
+- Project Blueprint: `/init-ai` (generates starter `ai.txt`).
+- Skill Management: `/plugin add|remove|list`, `/<skill> off|on|status`.
+- Core Memory Rules: `/pin <text>`, `/pins`, `/unpin <id>`.
+- System Controls: `/max_tool_calls [n]`, `/readonly`, `/diff`, `/export`, `/clear`.
+
+## Developer Rules & Guidelines
+1. **Tests are Source of Truth**: Never modify assertions in `tests/`. Always fix bugs strictly in `src/agent/` application source code.
+2. **Slash Command Registration**: When adding a new slash command, register it in `main.py` (`reserved_commands`), `ui.py` (`words`), and `/help` menu.
+3. **Dependency & Environment**: Managed via `uv`. Always use `uv run pytest` for testing and `uv run losna` for running the CLI.
+4. **Windows Process Locking**: If `losna.exe` is open in another terminal, use `uv run --no-sync bump-my-version` to prevent `.venv` file lock errors (`os error 32`).

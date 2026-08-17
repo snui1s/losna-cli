@@ -237,7 +237,7 @@ def get_user_input(skills):
     Returns:
         str: The typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd', '/max_tool_calls']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd', '/init-ai', '/max_tool_calls', '/usage']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = PromptCompleter(words)
@@ -409,13 +409,14 @@ def _trigger_async_update_check():
     threading.Thread(target=check_github, daemon=True).start()
 
 
-def print_agent_response(content: str, duration: float):
+def print_agent_response(content: str, duration: float, usage_info: str = ""):
     """
     Renders the agent's markdown response beautifully using Rich.
 
     Args:
         content (str): Markdown response text to render.
         duration (float): Response generation duration in seconds.
+        usage_info (str, optional): Additional token usage details to append to panel title.
     """
     from rich.console import Console
     from rich.markdown import Markdown
@@ -440,10 +441,11 @@ def print_agent_response(content: str, duration: float):
     console = Console(theme=custom_theme)
     console.print()
 
+    title_text = f"Agent (took {duration:.2f}s{usage_info})"
     md = Markdown(content)
     panel = Panel(
         md,
-        title=f"[bold color(141)]Agent (took {duration:.2f}s)[/bold color(141)]",
+        title=f"[bold color(141)]{title_text}[/bold color(141)]",
         title_align="left",
         border_style="color(97)",              # Soft cosmic purple border
         box=box.ROUNDED,

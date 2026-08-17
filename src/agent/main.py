@@ -1,27 +1,31 @@
-# hello from the other side
-from openrouter import OpenRouter
+"""
+main.py — Slim entrypoint orchestrator for Losna CLI.
+
+Initializes the database, selects a session, and runs the main conversation loop.
+Delegates slash command handling to slash_commands.py and AI agent calls to agent_loop.py.
+"""
+
 import os
 import time
-import json
-from datetime import datetime
 from . import config
 from . import db
 from . import prompts
 from . import session
 from . import skills_loader
-from . import plugin_manager
-from . import diff_utils
 from . import mention_utils
-from . import export_utils
-from .tools import my_tools, dispatch_tool, get_available_tools
 from .memory import compact_memory
-from .ui import Spinner, get_user_input, print_banner, print_agent_response
+from .ui import get_user_input, print_banner
+from .slash_commands import handle_slash_command
+from .agent_loop import run_agent_loop
+from .usage_tracker import UsageTracker
+
 
 def main():
     # --- Startup Initialization ---
     init_db_result = db.init_db()
     current_session_id, conversation_history = session.select_session()
     SYSTEM_PROMPT = conversation_history[0]["content"]
+    usage_tracker = UsageTracker()
 
     # Format model name and path for the banner display
     model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
@@ -30,6 +34,11 @@ def main():
     # Print the customized Losna CLI gold crescent moon banner
     print_banner(model_display, project_path)
     print(f"Current session: [{current_session_id}]")
+
+    auto_fname, auto_fpath, _ = prompts.load_auto_ai_context()
+    if auto_fname:
+        print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
+
     print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
 
     # --- Main Conversation Loop ---
@@ -37,549 +46,42 @@ def main():
     while True:
         skills = skills_loader.list_skills()
         user_input = get_user_input(skills)
-        
+
         # Ignore empty inputs and prompt again
         if not user_input or not user_input.strip():
             continue
 
         # Check for loop termination command
         if user_input.lower() in ['/exit', '/quit']:
+            exit_summary = usage_tracker.format_exit_summary()
+            if exit_summary:
+                print(exit_summary)
             print("Shutting down agent...")
             break
 
-        # --- Slash commands for session management & help ---
-        if user_input.lower() == "/help":
-            print("=== Available Commands ===")
-            print("  /help          - Show this help menu with all available commands")
-            print("  /sessions      - List all chat sessions (tabs) and see their IDs")
-            print("  /new <title>   - Start a new chat session (e.g. '/new Web Development')")
-            print("  /switch <id>   - Switch to an existing chat session by its ID (e.g. '/switch 3')")
-            print("  /delete_session <id> - Delete an existing chat session by its ID")
-            print("  /history [id]  - View the chat logs and tool call history for a session (defaults to current)")
-            print("  /model         - View current OpenRouter model or switch to a new model ID")
-            print("  /readonly      - Toggle Read-Only Mode (blocks file modification & shell execution)")
-            print("  /diff [file|session] - View colored git diff for a file or session memory state")
-            print("  /enter2confirm - Toggle double-Enter requirement before sending prompts to AI")
-            print("  /pin <text>    - Pin a custom rule/fact to AI Core Memory (remembered forever across sessions)")
-            print("  /pins          - List all pinned Core Memory rules with their IDs")
-            print("  /unpin <id>    - Unpin/remove a Core Memory rule by ID")
-            print("  /export [path] - Export current chat session history to a Markdown document")
-            print("  /clear         - Clear terminal screen and re-render header banner")
-            print("  /ls [path]     - List directory files and folders in clean formatted view")
-            print("  /cd <path>     - Change working directory (supports '..', '~', and '-')")
-            print("  @<filepath>    - Attach local file content directly into AI context (e.g. '@README.md')")
-            print("  /max_tool_calls [n] - View or set max tool calls limit per turn (persisted in ~/.losnarc)")
-            print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
-            print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
-            print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
-            print("  /exit, /quit   - Terminate the agent harness session")
-            if skills:
-                print("\n=== Skill Commands (loads skill prompt dynamically) ===")
-                for s in skills:
-                    print(f"  /{s['name']:<14} - {s['description']}")
+        # --- Build shared mutable context ---
+        ctx = {
+            "session_id": current_session_id,
+            "conversation_history": conversation_history,
+            "SYSTEM_PROMPT": SYSTEM_PROMPT,
+            "skills": skills,
+            "is_skill_cmd": False,
+            "usage_tracker": usage_tracker,
+        }
 
-            print("\n=== Command Usage Examples ===")
-            print("  @src/agent/main.py Summarize what this file does")
-            print("  /plugin add https://github.com/JuliusBrussee/caveman")
-            print("  /plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices")
-            print("  /plugin remove caveman")
-            print("  /pin Always write type hints for functions")
-            print("  /unpin 1")
-            print("  /max_tool_calls 50")
-            print("  /diff src/agent/main.py")
-            print("  /export ./exports/my_chat.md")
-            print("  /switch 3")
-            print()
+        # --- Try slash command dispatch ---
+        handled = handle_slash_command(user_input, ctx)
+
+        # Sync back any mutations from slash command handlers
+        current_session_id = ctx["session_id"]
+        conversation_history = ctx["conversation_history"]
+        SYSTEM_PROMPT = ctx["SYSTEM_PROMPT"]
+        is_skill_cmd = ctx.get("is_skill_cmd", False)
+
+        if handled:
             continue
 
-        if user_input.lower() == "/sessions":
-            for s in db.list_sessions():
-                marker = " (current)" if s["id"] == current_session_id else ""
-                print(f"  [{s['id']}] {s['title']}  (last updated: {s['updated_at']}){marker}")
-            print()
-            continue
-
-        if user_input.lower().startswith("/new"):
-            title = user_input[4:].strip() or f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            current_session_id = db.create_session(title)
-            SYSTEM_PROMPT = prompts.build_system_prompt()
-            conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
-            print(f"Switched to new session [{current_session_id}] '{title}'\n")
-            continue
-
-        if user_input.lower().startswith("/switch"):
-            target = user_input[7:].strip()
-            if target.isdigit() and db.session_exists(int(target)):
-                current_session_id = int(target)
-                archived_count, last_summary = db.get_compaction_state(current_session_id)
-                loaded = db.load_messages(current_session_id, skip=archived_count)
-                SYSTEM_PROMPT = prompts.build_system_prompt(previous_summary=last_summary)
-
-                if not loaded or loaded[0].get("role") != "system":
-                    loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
-                else:
-                    loaded[0]["content"] = SYSTEM_PROMPT
-                conversation_history = loaded
-                print(f"Switched to session [{current_session_id}] with {len(conversation_history)} message(s)\n")
-            else:
-                if not target:
-                    print("Usage: /switch <session_id>  (e.g. '/switch 3'). Use '/sessions' to see available chats.\n")
-                else:
-                    print(f"Session '{target}' not found. Use '/sessions' to see available chats.\n")
-            continue
-        if user_input.lower().startswith("/delete_session"):
-            target = user_input[15:].strip()
-            if target.isdigit() and db.session_exists(int(target)):
-                target_id = int(target)
-                if target_id == current_session_id:
-                    # If deleting current session, check if there are others to switch to
-                    all_sessions = db.list_sessions()
-                    other_sessions = [s for s in all_sessions if s["id"] != current_session_id]
-                    if other_sessions:
-                        # Switch to the most recently updated session first
-                        new_session = other_sessions[0]
-                        current_session_id = new_session["id"]
-                        archived_count, last_summary = db.get_compaction_state(current_session_id)
-                        loaded = db.load_messages(current_session_id, skip=archived_count)
-                        SYSTEM_PROMPT = prompts.build_system_prompt(previous_summary=last_summary)
-                        if not loaded or loaded[0].get("role") != "system":
-                            loaded = [{"role": "system", "content": SYSTEM_PROMPT}] + loaded
-                        else:
-                            loaded[0]["content"] = SYSTEM_PROMPT
-                        conversation_history = loaded
-                        db.delete_session(target_id)
-                        print(f"Deleted current session. Switched to session [{current_session_id}] '{new_session['title']}'\n")
-                    else:
-                        # If it is the last session, delete and automatically spawn a new one
-                        db.delete_session(target_id)
-                        current_session_id = db.create_session("New Chat")
-                        SYSTEM_PROMPT = prompts.build_system_prompt()
-                        conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
-                        print(f"Deleted final session. Created and switched to a fresh session [{current_session_id}] 'New Chat'\n")
-                else:
-                    db.delete_session(target_id)
-                    print(f"Deleted session [{target_id}] successfully.\n")
-            else:
-                print(f"Session '{target}' not found. Use '/sessions' to view IDs.\n")
-            continue
-        if user_input.lower().startswith("/history"):
-            target = user_input[8:].strip()
-            # If no ID provided, default to current session
-            target_id = current_session_id
-            if target:
-                if target.isdigit() and db.session_exists(int(target)):
-                    target_id = int(target)
-                else:
-                    print(f"Session '{target}' not found. Use '/sessions' to view valid IDs.\n")
-                    continue
-
-            # Load the messages (both active and compacted summaries if available)
-            all_msgs = db.load_messages(target_id, skip=0)
-            _, last_summary = db.get_compaction_state(target_id)
-
-            print(f"\n=== Chat History for Session [{target_id}] ===")
-            if last_summary:
-                print(f"\033[1;33m[Compacted Context Summary]:\033[0m {last_summary}\n")
-            
-            # Print messages nicely formatted
-            has_messages = False
-            for m in all_msgs:
-                role = m.get("role", "unknown").upper()
-                content = m.get("content", "").strip()
-                if role == "SYSTEM":
-                    continue  # Skip raw system instructions to keep history clean
-                
-                has_messages = True
-                if role == "USER":
-                    print(f"\033[1;32mUser:\033[0m {content}")
-                elif role == "ASSISTANT":
-                    # If it has tool calls, print them
-                    if m.get("tool_calls"):
-                        for tc in m["tool_calls"]:
-                            print(f"\033[1;36mAssistant requested tool:\033[0m {tc.get('function', {}).get('name')} {tc.get('function', {}).get('arguments')}")
-                    if content:
-                        print(f"\033[1;34mAssistant:\033[0m {content}")
-                elif role == "TOOL":
-                    print(f"  \033[1;30m[Tool Return ({m.get('name')}):\033[0m \033[0;37m{content}\033[1;30m]\033[0m")
-                print("-" * 50)
-            
-            if not has_messages:
-                print("No user or assistant messages in this session yet.")
-            print()
-            continue
-        if user_input.lower().startswith("/plugin"):
-            parts = user_input.split()
-            # Expected syntax: /plugin add <repo_url> [--skill <name>] OR /plugin remove <name> OR /plugin enable|disable|list
-            if len(parts) >= 3 and parts[1].lower() == "add":
-                repo_url = parts[2]
-                skill_name = None
-                if "--skill" in parts:
-                    try:
-                        idx = parts.index("--skill")
-                        if idx + 1 < len(parts):
-                            skill_name = parts[idx + 1]
-                    except ValueError:
-                        pass
-                
-                print(f"  [System]: Attempting to install plugin...")
-                result_msg = plugin_manager.install_plugin(repo_url, skill_name)
-                print(f"\n{result_msg}\n")
-            elif len(parts) >= 2 and parts[1].lower() == "enable":
-                if len(parts) >= 3:
-                    sk = parts[2].strip().lstrip("/")
-                    config.enable_skill(sk)
-                    print(f"  \033[1;32m[System]: Skill '{sk}' is now ENABLED.\033[0m\n")
-                else:
-                    print("Usage: /plugin enable <skill_name>\n")
-            elif len(parts) >= 2 and parts[1].lower() == "disable":
-                if len(parts) >= 3:
-                    sk = parts[2].strip().lstrip("/")
-                    config.disable_skill(sk)
-                    print(f"  \033[1;33m[System]: Skill '{sk}' is now DISABLED.\033[0m\n")
-                else:
-                    print("Usage: /plugin disable <skill_name>\n")
-            elif len(parts) >= 2 and parts[1].lower() == "list":
-                current_skills = skills_loader.list_skills()
-                if not current_skills:
-                    print("  [System]: No plugins/skills are currently installed.\n")
-                else:
-                    print("=== Installed Plugins/Skills ===")
-                    for idx, s in enumerate(current_skills, start=1):
-                        is_dis = config.is_skill_disabled(s['name'])
-                        status = "\033[1;31m[DISABLED]\033[0m" if is_dis else "\033[1;32m[ENABLED]\033[0m"
-                        print(f"  [{idx}] /{s['name']:<14} {status} - {s['description']}")
-                    print()
-            elif len(parts) >= 2 and parts[1].lower() == "remove":
-                skill_to_remove = parts[2] if len(parts) >= 3 else None
-                
-                # If no skill name is specified directly, list installed skills and ask user
-                if not skill_to_remove:
-                    current_skills = skills_loader.list_skills()
-                    if not current_skills:
-                        print("  [System]: No plugins/skills are currently installed.\n")
-                        continue
-                        
-                    print("\nInstalled Plugins/Skills:")
-                    for idx, s in enumerate(current_skills, start=1):
-                        print(f"  [{idx}] /{s['name']} - {s['description']}")
-                    print()
-                    
-                    choice = input("Enter the number of the plugin to delete (or Press Enter to cancel): ").strip()
-                    if choice.isdigit():
-                        choice_idx = int(choice) - 1
-                        if 0 <= choice_idx < len(current_skills):
-                            skill_to_remove = current_skills[choice_idx]["name"]
-                        else:
-                            print("Invalid number. Operation canceled.\n")
-                            continue
-                    else:
-                        print("Operation canceled.\n")
-                        continue
-                
-                print(f"  [System]: Attempting to remove plugin '{skill_to_remove}'...")
-                result_msg = plugin_manager.remove_plugin(skill_to_remove)
-                print(f"\n{result_msg}\n")
-            else:
-                print("=== Plugin Management Usage ===")
-                print("  /plugin add <repository_url> [--skill <skill_name>]")
-                print("  /plugin enable <skill_name>  |  /plugin disable <skill_name>")
-                print("  /plugin list                |  /plugin remove [skill_name]\n")
-                print("Examples:")
-                print("  /plugin add https://github.com/JuliusBrussee/caveman")
-                print("  /plugin disable caveman  (or '/caveman off')")
-                print("  /plugin enable caveman   (or '/caveman on')")
-                print("  /plugin list\n")
-            continue
-
-        if user_input.lower().startswith("/model"):
-            print(f"\nCurrent Model: \033[1;36m{config.MODEL_NAME}\033[0m")
-            new_model = input("Enter OpenRouter Model ID (e.g. 'google/gemini-2.5-pro'): ").strip()
-            if new_model:
-                config.update_model_name(new_model)
-            else:
-                print("Model change canceled.")
-            print()
-            continue
-
-        if user_input.lower().startswith("/readonly"):
-            parts = user_input.split()
-            if len(parts) > 1:
-                arg = parts[1].lower()
-                if arg in ['on', 'true', '1']:
-                    config.set_read_only_mode(True)
-                elif arg in ['off', 'false', '0']:
-                    config.set_read_only_mode(False)
-                elif arg == 'status':
-                    pass
-                else:
-                    print("Usage: /readonly [on|off|status]\n")
-                    continue
-            else:
-                config.set_read_only_mode(not config.READ_ONLY_MODE)
-
-            CYAN = "\033[1;36m"
-            GREEN = "\033[1;32m"
-            RESET = "\033[0m"
-            status_text = f"{CYAN}ENABLED (Read-Only Mode){RESET}" if config.READ_ONLY_MODE else f"{GREEN}DISABLED (Full Access){RESET}"
-            print(f"  [System]: Read-Only Mode is now {status_text}\n")
-
-            SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-            if conversation_history and conversation_history[0].get("role") == "system":
-                conversation_history[0]["content"] = SYSTEM_PROMPT
-            continue
-
-        if user_input.lower().startswith("/diff"):
-            parts = user_input.split(maxsplit=1)
-            arg = parts[1].strip() if len(parts) > 1 else ""
-            if arg.lower() == "session":
-                diff_utils.render_session_diff(current_session_id)
-            else:
-                diff_text = diff_utils.get_git_diff(arg if arg else None)
-                title = f"Git Diff ({arg})" if arg else "Git Workspace Diff"
-                diff_utils.render_git_diff(diff_text, title=title)
-            continue
-
-        if user_input.lower().startswith("/enter2confirm"):
-            parts = user_input.split()
-            if len(parts) > 1:
-                arg = parts[1].lower()
-                if arg in ['on', 'true', '1']:
-                    config.set_enter_2_confirm(True)
-                elif arg in ['off', 'false', '0']:
-                    config.set_enter_2_confirm(False)
-                elif arg == 'status':
-                    pass
-                else:
-                    print("Usage: /enter2confirm [on|off|status]\n")
-                    continue
-            else:
-                config.set_enter_2_confirm(not config.ENTER_2_CONFIRM)
-
-            CYAN = "\033[1;36m"
-            GREEN = "\033[1;32m"
-            RESET = "\033[0m"
-            status_text = f"{CYAN}ENABLED (Press Enter 2x to send){RESET}" if config.ENTER_2_CONFIRM else f"{GREEN}DISABLED (Single Enter to send){RESET}"
-            print(f"  [System]: Double-Enter Confirmation is now {status_text}\n")
-            continue
-
-        if user_input.lower() == "/pins":
-            pinned_items = db.load_pinned_memory_with_ids()
-            if not pinned_items:
-                print("  [System]: No pinned Core Memory rules found.\n")
-            else:
-                print("=== Pinned Core Memory Rules ===")
-                for item in pinned_items:
-                    print(f"  [{item['id']}] {item['text']}")
-                print()
-            continue
-
-        if user_input.lower().startswith("/pin"):
-            parts = user_input.split(maxsplit=1)
-            rule_text = parts[1].strip() if len(parts) > 1 else ""
-            if not rule_text:
-                print("Usage: /pin <rule_text>  (e.g. '/pin Always use type hints')\n")
-                continue
-            db.save_memory_fact(rule_text, source_session_id=current_session_id, is_pinned=True)
-            SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-            if conversation_history and conversation_history[0].get("role") == "system":
-                conversation_history[0]["content"] = SYSTEM_PROMPT
-            print(f"  [System]: Pinned to Core Memory: '{rule_text}'\n")
-            continue
-
-        if user_input.lower().startswith("/unpin"):
-            parts = user_input.split(maxsplit=1)
-            target = parts[1].strip() if len(parts) > 1 else ""
-            if not target:
-                print("Error: Please specify an ID or fact text to unpin, e.g. '/unpin 1'\n")
-                continue
-            success = db.delete_pinned_fact(target)
-            if success:
-                SYSTEM_PROMPT = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-                if conversation_history and conversation_history[0].get("role") == "system":
-                    conversation_history[0]["content"] = SYSTEM_PROMPT
-                print(f"  [System]: Successfully unpinned Core Memory item [{target}]\n")
-            else:
-                print(f"  [System]: Could not find pinned Core Memory item matching '{target}'\n")
-            continue
-
-        if user_input.lower().startswith("/export"):
-            parts = user_input.split(maxsplit=1)
-            path_arg = parts[1].strip() if len(parts) > 1 else None
-            success, result_path = export_utils.export_session_to_markdown(current_session_id, custom_filepath=path_arg)
-            if success:
-                print(f"  [System]: Successfully exported chat session to: {result_path}\n")
-            else:
-                print(f"  [System]: Export failed - {result_path}\n")
-            continue
-
-        if user_input.lower() in ["/clear", "clear"]:
-            os.system("cls" if os.name == "nt" else "clear")
-            model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
-            project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
-            print_banner(model_display, project_path)
-            print(f"Current session: [{current_session_id}]")
-            print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
-            continue
-
-        if user_input.lower().startswith(("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call")):
-            parts = user_input.split()
-            if len(parts) > 1 and parts[1].isdigit():
-                new_val = int(parts[1])
-                if new_val > 0:
-                    config.set_max_tool_calls(new_val)
-                    print(f"  [System]: MAX_TOOL_CALLS limit updated and persisted to {new_val}\n")
-                else:
-                    print("Error: Please provide a positive integer greater than 0.\n")
-            else:
-                print(f"  [System]: Current MAX_TOOL_CALLS limit is {config.MAX_TOOL_CALLS}.\n")
-                print("Usage: /max_tool_calls <number>  (e.g. '/max_tool_calls 50')\n")
-            continue
-
-        if user_input.lower().startswith(("/ls", "ls")):
-            parts = user_input.split(maxsplit=1)
-            target_path = parts[1].strip() if len(parts) > 1 else "."
-
-            abs_target = os.path.abspath(target_path)
-            if not os.path.exists(abs_target):
-                print(f"Error: Directory or file '{target_path}' does not exist.\n")
-                continue
-
-            if os.path.isfile(abs_target):
-                size = os.path.getsize(abs_target)
-                print(f"  📄 {os.path.basename(abs_target)} ({size:,} bytes)\n")
-                continue
-
-            try:
-                items = sorted(os.listdir(abs_target))
-                rel_path = os.path.relpath(abs_target, os.getcwd()).replace("\\", "/")
-                display_path = "." if rel_path == "." else f"./{rel_path}"
-                print(f"=== Directory Listing: {display_path} ===")
-
-                dirs = []
-                files = []
-                for item in items:
-                    if item.startswith(".") and item not in [".env", ".losnarc"]:
-                        continue
-                    full_item = os.path.join(abs_target, item)
-                    if os.path.isdir(full_item):
-                        dirs.append(f"  \033[1;36m📁 {item}/\033[0m")
-                    else:
-                        size = os.path.getsize(full_item)
-                        files.append(f"  \033[38;5;253m📄 {item}\033[0m \033[38;5;244m({size:,} bytes)\033[0m")
-
-                for d in dirs:
-                    print(d)
-                for f in files:
-                    print(f)
-                if not dirs and not files:
-                    print("  (directory is empty)")
-                print()
-            except Exception as e:
-                print(f"Error reading directory: {e}\n")
-            continue
-
-        if user_input.lower().startswith(("/cd", "cd ")):
-            parts = user_input.split(maxsplit=1)
-            target = parts[1].strip() if len(parts) > 1 else config.PROJECT_ROOT
-
-            if target == "~":
-                target = os.path.expanduser("~")
-            elif target == "-":
-                target = getattr(config, "_PREV_PWD", config.PROJECT_ROOT)
-
-            try:
-                abs_target = os.path.abspath(target)
-                if not os.path.exists(abs_target):
-                    print(f"Error: Directory '{target}' does not exist.\n")
-                    continue
-                if not os.path.isdir(abs_target):
-                    print(f"Error: Path '{target}' is a file, not a directory.\n")
-                    continue
-
-                config._PREV_PWD = os.getcwd()
-                os.chdir(abs_target)
-                rel_path = os.path.relpath(abs_target, config.PROJECT_ROOT).replace("\\", "/")
-                display_path = "." if rel_path == "." else f"./{rel_path}"
-                print(f"  \033[1;32m[System]: Changed working directory to: {display_path}\033[0m  ({abs_target})\n")
-            except Exception as e:
-                print(f"Error changing directory: {e}\n")
-            continue
-
-        if user_input.lower().startswith("/search"):
-            query = user_input[7:].strip()
-            if not query:
-                print("Error: Please provide a query to search, e.g. '/search python 3.14 features'\n")
-                continue
-
-            # Inject system guide forcing the agent to use web search, then append user message
-            conversation_history.append({
-                "role": "system",
-                "content": "CRITICAL: The user wants to search the web. You MUST execute the 'web_search' tool on the query provided below to answer their question."
-            })
-            db.save_message(current_session_id, "system", "CRITICAL: The user wants to search the web. You MUST execute the 'web_search' tool on the query provided below to answer their question.")
-
-            user_msg = query
-            conversation_history.append({"role": "user", "content": user_msg})
-            db.save_message(current_session_id, "user", user_msg)
-            is_skill_cmd = True  # Treat as a skill command so it falls through to the Agent call loop
-
-        else:
-            is_skill_cmd = False
-
-        # Check for dynamic skill command (e.g. /unit-testing <query>)
-        command = user_input.split(maxsplit=1)[0].lower()
-        reserved_commands = {'/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear', '/ls', 'ls', '/cd', 'cd', '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call'}
-        if not is_skill_cmd and user_input.startswith("/"):
-            if command not in reserved_commands:
-                parts = user_input.split(maxsplit=1)
-                cmd_name = parts[0][1:].strip().lower()  # Strip leading '/'
-                query = parts[1].strip() if len(parts) > 1 else ""
-
-                matching_skills = [s for s in skills if s["name"].lower() == cmd_name]
-                if matching_skills:
-                    skill = matching_skills[0]
-                    sub_arg = query.strip().lower()
-
-                    # Handle direct toggle subcommands: /<skill> off|disable|on|enable|status
-                    if sub_arg in ["off", "disable", "disabled", "0"]:
-                        config.disable_skill(skill["name"])
-                        print(f"  \033[1;33m[System]: Skill '{skill['name']}' is now DISABLED.\033[0m\n")
-                        continue
-                    elif sub_arg in ["on", "enable", "enabled", "1"]:
-                        config.enable_skill(skill["name"])
-                        print(f"  \033[1;32m[System]: Skill '{skill['name']}' is now ENABLED.\033[0m\n")
-                        continue
-                    elif sub_arg in ["status"]:
-                        status_str = "\033[1;31mDISABLED\033[0m" if config.is_skill_disabled(skill["name"]) else "\033[1;32mENABLED\033[0m"
-                        print(f"  [System]: Skill '{skill['name']}' is currently {status_str}.\n")
-                        continue
-
-                    # If skill is disabled, block execution
-                    if config.is_skill_disabled(skill["name"]):
-                        print(f"  \033[1;31m[System]: Skill '{skill['name']}' is currently DISABLED.\033[0m")
-                        print(f"  Type '/{skill['name']} on' or '/plugin enable {skill['name']}' to enable it.\n")
-                        continue
-
-                    print(f"  [System]: Invoking skill '{skill['name']}'...")
-                    skill_content = skills_loader.read_skill(skill["name"])
-
-                    # Load instruction into context & DB as a system guide
-                    conversation_history.append({
-                        "role": "system",
-                        "content": f"[Invoked Skill Instructions: {skill['name']}]\n{skill_content}"
-                    })
-                    db.save_message(current_session_id, "system", f"[Invoked Skill: {skill['name']}]\n{skill_content}")
-
-                    user_msg = query if query else f"I want you to use the '{skill['name']}' skill."
-                    conversation_history.append({"role": "user", "content": user_msg})
-                    db.save_message(current_session_id, "user", user_msg)
-                    is_skill_cmd = True
-                else:
-                    # Unknown command typed! Do NOT send to AI, display helpful warning
-                    print(f"  [System]: Unknown slash command '{command}'. Type '/help' to see available commands.\n")
-                    continue
-
-        # Check for @filepath mentions in user input
+        # --- Check for @filepath mentions in user input ---
         mentioned_files = mention_utils.extract_file_mentions(user_input)
         if mentioned_files:
             attachments = mention_utils.load_file_attachments(mentioned_files)
@@ -613,176 +115,13 @@ def main():
         )
         print(f"  [DEBUG] compact_memory took {time.time()-_t0:.3f}s")
 
-        # --- State: Main Agent Call Loop (with Retries, Tools, and Safeguards) ---
-        attempt = 0
-        tool_call_count = 0       
-        loop_iteration = 0
-        loop_start_time = time.time()
-        
-        # Take a backup snapshot of conversation history before starting thinking to allow clean recovery on errors
-        safe_history_backup = list(conversation_history) 
-        
-        while attempt < config.MAX_RETRIES:
-            try:
-                loop_iteration += 1
-                print(f"  [DEBUG] --- Loop iteration {loop_iteration} (attempt={attempt}, tool_calls_so_far={tool_call_count}) ---")
-                
-                if attempt > 0:
-                    print(f"  [Retrying... {attempt}/{config.MAX_RETRIES}]")
-                
-                # --- Start timing AI processing ---
-                print(f"  [Thinking...] (sending {len(conversation_history)} messages to API)") 
-                agent_start_time = time.time() 
-                
-                with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
-                    spinner = Spinner("Reflecting")
-                    spinner.start()
-                    try:
-                        active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
-                        response = client.chat.send(
-                            model=config.MODEL_NAME,
-                            messages=conversation_history,
-                            tools=active_tools
-                        )
-                    finally:
-                        spinner.stop()
-                    
-                    message = response.choices[0].message
-                    
-                    # --- Stop timing AI ---
-                    agent_end_time = time.time()
-                    agent_duration = agent_end_time - agent_start_time
-                    print(f"  [DEBUG] API call returned in {agent_duration:.2f}s | has_tool_calls={bool(hasattr(message, 'tool_calls') and message.tool_calls)}")
+        # --- Run Agent Loop ---
+        ctx["conversation_history"] = conversation_history
+        run_agent_loop(ctx)
 
-                    if hasattr(message, 'tool_calls') and message.tool_calls:
-                        if tool_call_count >= config.MAX_TOOL_CALLS:
-                            print("  \033[1;31m[System]: Too many tool calls. Forcing stop to prevent infinite loop.\033[0m")
-                            conversation_history = safe_history_backup[:-1] 
-                            break
-                            
-                        # Colored output for system decisions
-                        GREEN = "\033[1;32m"
-                        CYAN = "\033[1;36m"
-                        RESET = "\033[0m"
-                        
-                        tool_call_count += len(message.tool_calls)
-                        assistant_msg = message.model_dump(exclude_none=True)
-                        conversation_history.append(assistant_msg)
-                        
-                        # Persist the assistant tool-call message to SQLite
-                        tc_json = json.dumps(assistant_msg.get("tool_calls", []), ensure_ascii=False)
-                        db.save_message(
-                            current_session_id, "assistant",
-                            assistant_msg.get("content") or "",
-                            tool_calls_json=tc_json
-                        )
-                        
-                        for tool_call in message.tool_calls:
-                            func_name = tool_call.function.name
-                            try:
-                                args = json.loads(tool_call.function.arguments)
-                            except:
-                                args = {}
-                            
-                            # Dynamic Spinner for active Tool Execution
-                            # Truncate args key for display if too long
-                            args_summary = str(args)[:35] + "..." if len(str(args)) > 35 else str(args)
-                            tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary}")
-                            tool_spinner.start()
-                            
-                            try:
-                                # Run the dispatcher
-                                tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
-                                
-                                # Handle interactive soft-block confirmation prompts
-                                if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
-                                    # Stop the spinner first to release and clear the stdout line
-                                    tool_spinner.stop()
-                                    
-                                    # Colors for confirmation prompt
-                                    RED = "\033[1;31m"
-                                    GREEN = "\033[1;32m"
-                                    RESET = "\033[0m"
-                                    
-                                    # Prompt the user for validation on dangerous operations
-                                    confirm_prompt = input(f"\n{RED}[!!!]{RESET} Agent requests to execute dangerous command:\n  '{args.get('command') or args.get('command_line') or func_name}'\nAllow execution? ({GREEN}y{RESET}/{RED}n{RESET}): ").strip().lower()
-                                    if confirm_prompt == 'y':
-                                        # Re-run with confirmed=True
-                                        args['confirmed'] = True
-                                        # Re-create a fresh spinner instance since the previous one was stopped
-                                        tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary} (Confirmed)")
-                                        tool_spinner.start()
-                                        try:
-                                            tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
-                                        finally:
-                                            tool_spinner.stop()
-                                    else:
-                                        tool_result = "Error: Command execution declined by the user."
-                                        print("  [System]: Command declined by user.")
-                            finally:
-                                # Safe guard to stop spinner if it is still running
-                                if 'tool_spinner' in locals():
-                                    try:
-                                        tool_spinner.stop()
-                                    except:
-                                        pass
-                            
-                            # Print success checkmark instead of raw log dump
-                            print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
+        # Sync back after agent loop
+        conversation_history = ctx["conversation_history"]
 
-                            # Automatically trigger visual diff after file modifications
-                            if func_name in {"edit_local_file", "replace_in_file", "delete_local_file", "move_or_rename_file"} and not str(tool_result).startswith("Error"):
-                                target_file = args.get("filepath") or args.get("source_path") or args.get("dest_path")
-                                diff_utils.show_auto_diff(target_file)
-                            
-                            tool_msg = {
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": func_name,
-                                "content": str(tool_result)
-                            }
-                            conversation_history.append(tool_msg)
-                            # Persist tool result to SQLite
-                            db.save_message(
-                                current_session_id, "tool",
-                                str(tool_result),
-                                tool_call_id=tool_call.id,
-                                tool_name=func_name
-                            )
-                        
-                        continue
-                    
-                    else:
-                        answer = message.content or "[No text response]"
-                        total_elapsed = time.time() - loop_start_time
-                        print(f"  [DEBUG] Total loop time: {total_elapsed:.2f}s across {loop_iteration} iteration(s)")
-                        
-                        # Beautiful markdown rendering instead of standard print
-                        print_agent_response(answer, agent_duration)
-                        
-                        conversation_history.append({"role": "assistant", "content": answer})
-                        db.save_message(current_session_id, "assistant", answer)
-                        break 
-                    
-            except KeyboardInterrupt:
-                RED = "\033[1;31m"
-                RESET = "\033[0m"
-                print(f"\n{RED}  [System]: Operation canceled by user (Esc pressed).{RESET}\n")
-                conversation_history = list(safe_history_backup)
-                break
-            except Exception as e:
-                attempt += 1
-                print(f"  [Error]: {e}")
-                
-                # Rollback to safe state on errors
-                conversation_history = list(safe_history_backup) 
-                
-                if attempt < config.MAX_RETRIES:
-                    time.sleep(config.RETRY_DELAY)
-                else:
-                    print("  [System]: Max retries reached. Please try asking again.\n")
-                    conversation_history = conversation_history[:-1]
-                    break
 
 if __name__ == "__main__":
     main()
