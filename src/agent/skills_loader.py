@@ -8,6 +8,7 @@ Two layers:
 """
 
 import os
+from . import config
 
 README_MAX_CHARS = 20000   # Cap so a giant README cannot overflow prompt
 SKILL_MAX_CHARS = 20000    # Cap for a single skill's full content when loaded
@@ -124,7 +125,7 @@ def build_skills_prompt_block():
     Returns:
         str: Formatted system prompt block summarizing available skills.
     """
-    skills = list_skills()
+    skills = [s for s in list_skills() if not config.is_skill_disabled(s["name"])]
     if not skills:
         return ""
 
@@ -165,6 +166,10 @@ def read_skill(skill_name):
 
     results = []
     for name in names:
+        if config.is_skill_disabled(name):
+            results.append(f"Error: Skill '{name}' is currently disabled.")
+            continue
+
         if "/" in name or "\\" in name or ".." in name:
             results.append(f"Error: Invalid skill name '{name}'.")
             continue

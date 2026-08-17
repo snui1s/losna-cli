@@ -72,6 +72,53 @@ class PromptCompleter(Completer):
                         dirs.clear()
             except Exception:
                 pass
+            return
+
+        # 3. Dynamic directory autocompletion when typing '/cd ' or '/ls '
+        clean_text = text_before.lstrip()
+        if clean_text.startswith(('/cd ', '/ls ')):
+            parts = clean_text.split(maxsplit=1)
+            path_part = parts[1] if len(parts) > 1 else ""
+
+            if not path_part:
+                target_dir = os.getcwd()
+                search_prefix = ""
+                replace_len = 0
+            else:
+                raw_path = path_part.replace("\\", "/")
+                if raw_path.endswith("/"):
+                    target_dir = os.path.abspath(raw_path)
+                    search_prefix = ""
+                    replace_len = 0
+                else:
+                    target_dir = os.path.dirname(os.path.abspath(raw_path))
+                    search_prefix = os.path.basename(raw_path)
+                    replace_len = len(search_prefix)
+
+            try:
+                if os.path.exists(target_dir) and os.path.isdir(target_dir):
+                    candidates = []
+                    if "..".startswith(search_prefix.lower()):
+                        candidates.append("..")
+
+                    for item in sorted(os.listdir(target_dir)):
+                        if item.startswith(".") and not search_prefix.startswith(".") and item not in [".env", ".losnarc"]:
+                            continue
+                        full_item = os.path.join(target_dir, item)
+                        if os.path.isdir(full_item):
+                            if item.lower().startswith(search_prefix.lower()):
+                                candidates.append(item)
+
+                    for cand in candidates:
+                        display_str = f"📁 {cand}/" if cand != ".." else "📁 ../"
+                        completion_val = f"{cand}/" if cand != ".." else "../"
+                        yield Completion(
+                            completion_val,
+                            start_position=-replace_len,
+                            display=display_str
+                        )
+            except Exception:
+                pass
 
 
 # Backward-compatibility alias
@@ -191,7 +238,7 @@ def get_user_input(skills):
     Returns:
         str: The typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/max_tool_calls']
+    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd', '/init-ai', '/max_tool_calls', '/usage']
     for s in skills:
         words.append(f"/{s['name']}")
     completer = PromptCompleter(words)
@@ -272,6 +319,24 @@ def print_banner(model_name, project_path):
         right_text = text_lines[i] if i < len(text_lines) else ""
         print(f"{visual_logo[i]}   {right_text}")
     print()
+
+
+def print_session_header(session_id: int):
+    """
+    Renders banner, current session ID, auto-loaded context notice, and command hints.
+
+    Args:
+        session_id (int): Active session database ID.
+    """
+    from . import prompts
+    model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
+    project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
+    print_banner(model_display, project_path)
+    print(f"Current session: [{session_id}]")
+    auto_fname, auto_fpath, _ = prompts.load_auto_ai_context()
+    if auto_fname:
+        print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
+    print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/cd' change dir | '/init-ai' init blueprint | '/help' help menu | '/exit' or '/quit' to leave.\n")
 
     # Trigger update checker in a non-blocking background thread
     _trigger_async_update_check()
@@ -363,13 +428,14 @@ def _trigger_async_update_check():
     threading.Thread(target=check_github, daemon=True).start()
 
 
-def print_agent_response(content: str, duration: float):
+def print_agent_response(content: str, duration: float, usage_info: str = ""):
     """
     Renders the agent's markdown response beautifully using Rich.
 
     Args:
         content (str): Markdown response text to render.
         duration (float): Response generation duration in seconds.
+        usage_info (str, optional): Additional token usage details to append to panel title.
     """
     from rich.console import Console
     from rich.markdown import Markdown
@@ -394,10 +460,11 @@ def print_agent_response(content: str, duration: float):
     console = Console(theme=custom_theme)
     console.print()
 
+    title_text = f"Agent (took {duration:.2f}s{usage_info})"
     md = Markdown(content)
     panel = Panel(
         md,
-        title=f"[bold color(141)]Agent (took {duration:.2f}s)[/bold color(141)]",
+        title=f"[bold color(141)]{title_text}[/bold color(141)]",
         title_align="left",
         border_style="color(97)",              # Soft cosmic purple border
         box=box.ROUNDED,

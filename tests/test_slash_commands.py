@@ -12,6 +12,7 @@ from src.agent import export_utils
 from src.agent import plugin_manager
 from src.agent import mention_utils
 from src.agent import skills_loader
+from src.agent import prompts
 from src.agent import ui
 
 
@@ -193,3 +194,62 @@ class TestSlashCommands:
 
         # Reset back
         config.set_max_tool_calls(original_val)
+
+    # --- 17. Skill Enable / Disable Toggle ---
+    def test_skill_enable_disable_toggle(self):
+        skill_name = "caveman"
+        with patch("src.agent.config.save_global_config"):
+            config.disable_skill(skill_name)
+            assert config.is_skill_disabled(skill_name) is True
+
+            config.enable_skill(skill_name)
+            assert config.is_skill_disabled(skill_name) is False
+
+    # --- 18. /ls Command ---
+    def test_ls_command_autocomplete(self):
+        words = ['/ls', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/l"
+        doc.get_word_before_cursor.return_value = "/l"
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "/ls" in completion_texts
+
+    # --- 19. /cd Command ---
+    def test_cd_command_autocomplete(self):
+        words = ['/cd', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/c"
+        doc.get_word_before_cursor.return_value = "/c"
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "/cd" in completion_texts
+
+    def test_cd_directory_autocompletion(self, monkeypatch):
+        monkeypatch.chdir(config.PROJECT_ROOT)
+        words = ['/cd', '/help']
+        completer = ui.PromptCompleter(words)
+
+        doc = MagicMock()
+        doc.text_before_cursor = "/cd "
+        doc.get_word_before_cursor.return_value = ""
+
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
+        assert "src/" in completion_texts or "tests/" in completion_texts
+
+    # --- 20. Auto-Detected AI Context ---
+    def test_auto_ai_context_detection(self, tmp_path, monkeypatch):
+        test_ai_file = tmp_path / "ai.txt"
+        test_ai_file.write_text("# Project AI Instructions\nWrite clean python.", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        fname, rel_path, content = prompts.load_auto_ai_context()
+        assert fname == "ai.txt"
+        assert "Write clean python" in content

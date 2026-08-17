@@ -124,19 +124,39 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/unpin <id>` | Unpin/remove a Core Memory rule by ID or exact text |
 | `/export [path]` | Export active session chat log into a structured Markdown document |
 | `/clear` | Clear terminal screen and re-render header banner |
+| `/ls [path]` | List directory files and folders in clean formatted view |
+| `/cd <path>` | Change working directory (supports '..', '~', and '-') |
+| `/init-ai` | Generate a starter 'ai.txt' blueprint file for project auto-detection |
 | `/max_tool_calls [n]` | View or set maximum tool call limit per turn (persisted in ~/.losnarc) |
 | `/plugin add <url>` | Download and install all skills from a GitHub repository |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
-| `/plugin remove` | Show interactive list of installed plugins to choose for removal |
+| `/plugin remove <name>` | Uninstall/remove a custom skill plugin from local project |
+| `/plugin list` | List all installed skill plugins and their enabled status |
+| `/plugin enable <name>` | Enable a disabled skill plugin globally |
+| `/plugin disable <name>` | Disable an active skill plugin globally |
+| `/<skill> off\|on\|status` | Quick toggle or status check for an individual skill |
 | `/search <query>` | Search the web using Tavily and synthesize results |
+| `/usage` | Show session token usage and estimated cost breakdown |
 | `/exit` or `/quit` | Exit Losna CLI session |
 
 ### 💡 Slash Command Examples
 ```bash
-# Plugin Management
+# File Context & Workspace Inspection
+/init-ai
+@src/agent/main.py Summarize this file
+/ls
+/ls src/agent
+/cd src/agent
+/cd ..
+/cd -
+
+# Plugin & Skill Management
 /plugin add https://github.com/JuliusBrussee/caveman
-/plugin add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
-/plugin remove caveman
+/plugin disable caveman
+/plugin enable caveman
+/plugin list
+/caveman off
+/caveman on
 
 # Core Memory & Rule Pinning
 /pin Always write type hints and docstrings for functions

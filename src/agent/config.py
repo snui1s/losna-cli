@@ -142,6 +142,30 @@ def set_max_tool_calls(limit: int):
     save_global_config()
 
 
+DISABLED_SKILLS = set(s.lower() for s in global_config.get("DISABLED_SKILLS", []))
+
+
+def is_skill_disabled(skill_name: str) -> bool:
+    """Check if a skill is disabled globally."""
+    return skill_name.lower() in DISABLED_SKILLS
+
+
+def disable_skill(skill_name: str):
+    """Disables a skill globally and persists to ~/.losnarc."""
+    global DISABLED_SKILLS
+    DISABLED_SKILLS.add(skill_name.lower())
+    global_config["DISABLED_SKILLS"] = sorted(list(DISABLED_SKILLS))
+    save_global_config()
+
+
+def enable_skill(skill_name: str):
+    """Enables a skill globally and persists to ~/.losnarc."""
+    global DISABLED_SKILLS
+    DISABLED_SKILLS.discard(skill_name.lower())
+    global_config["DISABLED_SKILLS"] = sorted(list(DISABLED_SKILLS))
+    save_global_config()
+
+
 # Dynamically resolve keys
 # OpenRouter is required, so we prompt if missing
 OPENROUTER_API_KEY = get_or_prompt_key("OPENROUTER_API_KEY", "OpenRouter API Key")

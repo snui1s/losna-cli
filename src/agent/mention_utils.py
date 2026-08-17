@@ -93,8 +93,8 @@ def build_mention_prompt_block(attachments):
     if not attachments:
         return ""
 
-    blocks = ["[Attached File Context from @mentions]:"]
+    blocks = ["[Attached File Context]:"]
     for att in attachments:
-        blocks.append(f"\n--- File: {att['path']} ---\n{att['content']}")
+        blocks.append(f"\n--- File: @{att['path']} ---\n{att['content']}")
 
     return "\n".join(blocks)
