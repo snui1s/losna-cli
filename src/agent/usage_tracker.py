@@ -33,21 +33,6 @@ class UsageTracker:
     def total_tokens(self):
         return self.total_prompt_tokens + self.total_completion_tokens
 
-    def format_turn_footer(self, duration):
-        """
-        Compact one-line footer for after each AI response.
-
-        Args:
-            duration (float): Response time in seconds.
-
-        Returns:
-            str: Formatted footer string with ANSI colors.
-        """
-        PURPLE = "\033[38;5;97m"
-        RESET = "\033[0m"
-        cost_str = f" · ${self.total_cost:.4f}" if self.total_cost > 0 else ""
-        return f"{PURPLE}── Agent responded in {duration:.2f}s · {self.total_tokens:,} tokens{cost_str} ──{RESET}"
-
     def format_summary(self):
         """
         Full usage summary for /usage command.

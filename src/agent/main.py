@@ -100,10 +100,12 @@ def main():
             conversation_history.append({"role": "user", "content": user_input})
             _t0 = time.time()
             db.save_message(current_session_id, "user", user_input)
-            print(f"  [DEBUG] db.save_message(user) took {time.time()-_t0:.3f}s")
+            if getattr(config, "DEBUG", False):
+                print(f"  [DEBUG] db.save_message(user) took {time.time()-_t0:.3f}s")
 
         # --- State: Memory Compaction Logic ---
-        print(f"  [DEBUG] conversation_history length: {len(conversation_history)} (compaction threshold: {config.MAX_ACTIVE_MESSAGES})")
+        if getattr(config, "DEBUG", False):
+            print(f"  [DEBUG] conversation_history length: {len(conversation_history)} (compaction threshold: {config.MAX_ACTIVE_MESSAGES})")
         _t0 = time.time()
         conversation_history = compact_memory(
             conversation_history,
@@ -113,7 +115,8 @@ def main():
             SYSTEM_PROMPT,
             session_id=current_session_id
         )
-        print(f"  [DEBUG] compact_memory took {time.time()-_t0:.3f}s")
+        if getattr(config, "DEBUG", False):
+            print(f"  [DEBUG] compact_memory took {time.time()-_t0:.3f}s")
 
         # --- Run Agent Loop ---
         ctx["conversation_history"] = conversation_history

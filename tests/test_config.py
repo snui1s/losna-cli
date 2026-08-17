@@ -66,22 +66,35 @@ class TestConfigToggles:
     """Tests for config toggles and persistence setters."""
 
     def test_set_read_only_mode(self):
-        with patch("src.agent.config.save_global_config"):
-            config_module.set_read_only_mode(True)
-            assert config_module.READ_ONLY_MODE is True
-            config_module.set_read_only_mode(False)
-            assert config_module.READ_ONLY_MODE is False
+        orig = config_module.READ_ONLY_MODE
+        try:
+            with patch("src.agent.config.save_global_config") as mock_save:
+                config_module.set_read_only_mode(True)
+                assert config_module.READ_ONLY_MODE is True
+                assert mock_save.called
+                config_module.set_read_only_mode(False)
+                assert config_module.READ_ONLY_MODE is False
+        finally:
+            config_module.READ_ONLY_MODE = orig
 
     def test_set_enter_2_confirm(self):
-        with patch("src.agent.config.save_global_config"):
-            config_module.set_enter_2_confirm(True)
-            assert config_module.ENTER_2_CONFIRM is True
-            config_module.set_enter_2_confirm(False)
-            assert config_module.ENTER_2_CONFIRM is False
+        orig = config_module.ENTER_2_CONFIRM
+        try:
+            with patch("src.agent.config.save_global_config") as mock_save:
+                config_module.set_enter_2_confirm(True)
+                assert config_module.ENTER_2_CONFIRM is True
+                assert mock_save.called
+                config_module.set_enter_2_confirm(False)
+                assert config_module.ENTER_2_CONFIRM is False
+        finally:
+            config_module.ENTER_2_CONFIRM = orig
 
     def test_set_max_tool_calls(self):
-        with patch("src.agent.config.save_global_config"):
-            config_module.set_max_tool_calls(42)
-            assert config_module.MAX_TOOL_CALLS == 42
-            config_module.set_max_tool_calls(25)
-            assert config_module.MAX_TOOL_CALLS == 25
+        orig = config_module.MAX_TOOL_CALLS
+        try:
+            with patch("src.agent.config.save_global_config") as mock_save:
+                config_module.set_max_tool_calls(42)
+                assert config_module.MAX_TOOL_CALLS == 42
+                assert mock_save.called
+        finally:
+            config_module.MAX_TOOL_CALLS = orig

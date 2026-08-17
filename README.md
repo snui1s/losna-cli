@@ -130,8 +130,13 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/max_tool_calls [n]` | View or set maximum tool call limit per turn (persisted in ~/.losnarc) |
 | `/plugin add <url>` | Download and install all skills from a GitHub repository |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
-| `/plugin remove` | Show interactive list of installed plugins to choose for removal |
+| `/plugin remove <name>` | Uninstall/remove a custom skill plugin from local project |
+| `/plugin list` | List all installed skill plugins and their enabled status |
+| `/plugin enable <name>` | Enable a disabled skill plugin globally |
+| `/plugin disable <name>` | Disable an active skill plugin globally |
+| `/<skill> off\|on\|status` | Quick toggle or status check for an individual skill |
 | `/search <query>` | Search the web using Tavily and synthesize results |
+| `/usage` | Show session token usage and estimated cost breakdown |
 | `/exit` or `/quit` | Exit Losna CLI session |
 
 ### 💡 Slash Command Examples

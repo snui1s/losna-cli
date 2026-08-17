@@ -4,7 +4,10 @@
 Losna CLI is an intelligent terminal-native AI agent harness built with Python 3.10+, prompt_toolkit, and OpenRouter API. It supports multi-tab session persistence, local tool execution, custom skill plugins, and file mentions.
 
 ## Architecture & Core Modules
-- `src/agent/main.py`: CLI entry point, session switcher, slash command handler, and main LLM execution loop.
+- `src/agent/main.py`: CLI entry point, session startup, and main conversation orchestrator.
+- `src/agent/slash_commands.py`: Slash command router (`handle_slash_command`) and reserved commands (`RESERVED_COMMANDS`).
+- `src/agent/agent_loop.py`: OpenRouter streaming API execution loop, tool dispatcher, and retry handler.
+- `src/agent/usage_tracker.py`: In-memory session token usage and cost accumulator (`UsageTracker`).
 - `src/agent/config.py`: Global configuration manager & `~/.losnarc` persistence (`MAX_TOOL_CALLS`, `DISABLED_SKILLS`, `READ_ONLY_MODE`).
 - `src/agent/prompts.py`: System prompt builder with prefix caching, skills integration, and auto-loaded `ai.txt` context.
 - `src/agent/ui.py`: Rich terminal interface, prompt_toolkit interactive session, and `PromptCompleter` (autocompletes `/` commands, `@` files, `/cd` & `/ls` folder paths).
@@ -18,10 +21,10 @@ Losna CLI is an intelligent terminal-native AI agent harness built with Python 3
 - Project Blueprint: `/init-ai` (generates starter `ai.txt`).
 - Skill Management: `/plugin add|remove|list`, `/<skill> off|on|status`.
 - Core Memory Rules: `/pin <text>`, `/pins`, `/unpin <id>`.
-- System Controls: `/max_tool_calls [n]`, `/readonly`, `/diff`, `/export`, `/clear`.
+- System Controls: `/max_tool_calls [n]`, `/readonly`, `/diff`, `/export`, `/clear`, `/usage`.
 
 ## Developer Rules & Guidelines
 1. **Tests are Source of Truth**: Never modify assertions in `tests/`. Always fix bugs strictly in `src/agent/` application source code.
-2. **Slash Command Registration**: When adding a new slash command, register it in `main.py` (`reserved_commands`), `ui.py` (`words`), and `/help` menu.
+2. **Slash Command Registration**: When adding a new slash command, register it in `slash_commands.py` (`RESERVED_COMMANDS` and `handle_slash_command`), `ui.py` (`words`), and `/help` menu.
 3. **Dependency & Environment**: Managed via `uv`. Always use `uv run pytest` for testing and `uv run losna` for running the CLI.
 4. **Windows Process Locking**: If `losna.exe` is open in another terminal, use `uv run --no-sync bump-my-version` to prevent `.venv` file lock errors (`os error 32`).

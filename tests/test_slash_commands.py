@@ -198,12 +198,12 @@ class TestSlashCommands:
     # --- 17. Skill Enable / Disable Toggle ---
     def test_skill_enable_disable_toggle(self):
         skill_name = "caveman"
+        with patch("src.agent.config.save_global_config"):
+            config.disable_skill(skill_name)
+            assert config.is_skill_disabled(skill_name) is True
 
-        config.disable_skill(skill_name)
-        assert config.is_skill_disabled(skill_name) is True
-
-        config.enable_skill(skill_name)
-        assert config.is_skill_disabled(skill_name) is False
+            config.enable_skill(skill_name)
+            assert config.is_skill_disabled(skill_name) is False
 
     # --- 18. /ls Command ---
     def test_ls_command_autocomplete(self):
@@ -231,7 +231,8 @@ class TestSlashCommands:
         completion_texts = [c.text for c in completions]
         assert "/cd" in completion_texts
 
-    def test_cd_directory_autocompletion(self):
+    def test_cd_directory_autocompletion(self, monkeypatch):
+        monkeypatch.chdir(config.PROJECT_ROOT)
         words = ['/cd', '/help']
         completer = ui.PromptCompleter(words)
 

@@ -31,10 +31,6 @@ def test_usage_tracker_format_outputs():
     tracker = UsageTracker()
     tracker.record(prompt_tokens=500, completion_tokens=150, cost=0.0045)
 
-    footer = tracker.format_turn_footer(duration=1.23)
-    assert "1.23s" in footer
-    assert "650 tokens" in footer
-
     summary = tracker.format_summary()
     assert "Session Token Usage" in summary
     assert "500" in summary

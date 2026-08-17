@@ -33,9 +33,10 @@ def load_auto_ai_context():
     search_dirs = [os.getcwd()]
     try:
         from . import config
-        if config.PROJECT_ROOT not in search_dirs:
-            search_dirs.append(config.PROJECT_ROOT)
-    except Exception:
+        proj_root = getattr(config, "PROJECT_ROOT", None)
+        if proj_root and proj_root not in search_dirs:
+            search_dirs.append(proj_root)
+    except (ImportError, AttributeError):
         pass
 
     for sdir in search_dirs:
@@ -44,11 +45,18 @@ def load_auto_ai_context():
             if os.path.isfile(fpath):
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-                        content = f.read(4000).strip()
-                    if content:
-                        rel_p = os.path.relpath(fpath, os.getcwd()).replace("\\", "/")
+                        raw_content = f.read(4001)
+                    if raw_content:
+                        if len(raw_content) > 4000:
+                            content = raw_content[:4000].strip() + "\n\n... [truncated due to 4,000 char limit]"
+                        else:
+                            content = raw_content.strip()
+                        try:
+                            rel_p = os.path.relpath(fpath, os.getcwd()).replace("\\", "/")
+                        except ValueError:
+                            rel_p = fpath.replace("\\", "/")
                         return fname, rel_p, content
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     pass
     return None, None, None
 

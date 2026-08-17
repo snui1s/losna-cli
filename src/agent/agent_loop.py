@@ -12,30 +12,8 @@ from openrouter import OpenRouter
 from . import config
 from . import db
 from . import diff_utils
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.theme import Theme
-from rich.live import Live
-from rich import box
 from .tools import dispatch_tool, get_available_tools
 from .ui import Spinner, print_agent_response
-
-custom_theme = Theme({
-    "markdown.h1": "bold color(220)",      # Bright Gold
-    "markdown.h2": "bold color(214)",      # Amber / Orange-yellow
-    "markdown.h3": "bold color(184)",      # Yellowish-green / Soft Gold
-    "markdown.h4": "bold color(184)",
-    "markdown.h5": "bold color(184)",
-    "markdown.h6": "bold color(184)",
-    "markdown.item.bullet": "color(220)",  # Gold bullets
-    "markdown.block": "color(220)",        # Vertical border bar of blockquote
-    "markdown.blockquote": "color(186)",   # Controls quote block text
-    "markdown.paragraph": "color(253)",    # Default body paragraph text
-    "markdown.hr": "color(214)",           # Horizontal rule divider line
-})
-
-console = Console(theme=custom_theme)
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -111,13 +89,15 @@ def run_agent_loop(ctx):
     while attempt < config.MAX_RETRIES:
         try:
             loop_iteration += 1
-            print(f"  [DEBUG] --- Loop iteration {loop_iteration} (attempt={attempt}, tool_calls_so_far={tool_call_count}) ---")
+            if getattr(config, "DEBUG", False):
+                print(f"  [DEBUG] --- Loop iteration {loop_iteration} (attempt={attempt}, tool_calls_so_far={tool_call_count}) ---")
 
             if attempt > 0:
                 print(f"  [Retrying... {attempt}/{config.MAX_RETRIES}]")
 
             # --- Start timing AI processing ---
-            print(f"  [Thinking...] (sending {len(conversation_history)} messages to API)")
+            if getattr(config, "DEBUG", False):
+                print(f"  [Thinking...] (sending {len(conversation_history)} messages to API)")
             agent_start_time = time.time()
 
             with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
@@ -206,36 +186,33 @@ def run_agent_loop(ctx):
                     for v in tool_calls_acc.values()
                 ]
                 message = StreamedMessage(full_content, built_tcs)
-                print(f"  [DEBUG] API call returned in {agent_duration:.2f}s | has_tool_calls={bool(message.tool_calls)}")
+                if getattr(config, "DEBUG", False):
+                    print(f"  [DEBUG] API call returned in {agent_duration:.2f}s | has_tool_calls={bool(message.tool_calls)}")
 
                 if hasattr(message, 'tool_calls') and message.tool_calls:
                     if tool_call_count >= config.MAX_TOOL_CALLS:
                         print("  \033[1;31m[System]: Too many tool calls. Forcing stop to prevent infinite loop.\033[0m")
-                        ctx["conversation_history"] = safe_history_backup[:-1]
+                        ctx["conversation_history"] = list(safe_history_backup)
                         break
 
                     # Colored output for system decisions
                     GREEN = "\033[1;32m"
                     CYAN = "\033[1;36m"
+                    RED = "\033[1;31m"
                     RESET = "\033[0m"
 
                     tool_call_count += len(message.tool_calls)
                     assistant_msg = message.model_dump(exclude_none=True)
                     conversation_history.append(assistant_msg)
 
-                    # Persist the assistant tool-call message to SQLite
                     tc_json = json.dumps(assistant_msg.get("tool_calls", []), ensure_ascii=False)
-                    db.save_message(
-                        current_session_id, "assistant",
-                        assistant_msg.get("content") or "",
-                        tool_calls_json=tc_json
-                    )
+                    saved_assistant_in_db = False
 
                     for tool_call in message.tool_calls:
                         func_name = tool_call.function.name
                         try:
                             args = json.loads(tool_call.function.arguments)
-                        except:
+                        except (json.JSONDecodeError, TypeError):
                             args = {}
 
                         # Dynamic Spinner for active Tool Execution
@@ -251,7 +228,6 @@ def run_agent_loop(ctx):
                             if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
                                 tool_spinner.stop()
 
-                                RED = "\033[1;31m"
                                 confirm_prompt = input(f"\n{RED}[!!!]{RESET} Agent requests to execute dangerous command:\n  '{args.get('command') or args.get('command_line') or func_name}'\nAllow execution? ({GREEN}y{RESET}/{RED}n{RESET}): ").strip().lower()
                                 if confirm_prompt == 'y':
                                     args['confirmed'] = True
@@ -265,14 +241,11 @@ def run_agent_loop(ctx):
                                     tool_result = "Error: Command execution declined by the user."
                                     print("  [System]: Command declined by user.")
                         finally:
-                            if 'tool_spinner' in locals():
-                                try:
-                                    tool_spinner.stop()
-                                except:
-                                    pass
+                            tool_spinner.stop()
 
-                        # Print success checkmark
-                        print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
+                        # Print success checkmark only on actual success
+                        if not str(tool_result).startswith("Error"):
+                            print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
 
                         # Automatically trigger visual diff after file modifications
                         if func_name in {"edit_local_file", "replace_in_file", "delete_local_file", "move_or_rename_file"} and not str(tool_result).startswith("Error"):
@@ -286,6 +259,16 @@ def run_agent_loop(ctx):
                             "content": str(tool_result)
                         }
                         conversation_history.append(tool_msg)
+
+                        # Save assistant_msg to SQLite on first successful tool call
+                        if not saved_assistant_in_db:
+                            db.save_message(
+                                current_session_id, "assistant",
+                                assistant_msg.get("content") or "",
+                                tool_calls_json=tc_json
+                            )
+                            saved_assistant_in_db = True
+
                         # Persist tool result to SQLite
                         db.save_message(
                             current_session_id, "tool",
@@ -299,7 +282,8 @@ def run_agent_loop(ctx):
                 else:
                     answer = message.content or "[No text response]"
                     total_elapsed = time.time() - loop_start_time
-                    print(f"  [DEBUG] Total loop time: {total_elapsed:.2f}s across {loop_iteration} iteration(s)")
+                    if getattr(config, "DEBUG", False):
+                        print(f"  [DEBUG] Total loop time: {total_elapsed:.2f}s across {loop_iteration} iteration(s)")
 
                     usage_info = ""
                     if last_usage:

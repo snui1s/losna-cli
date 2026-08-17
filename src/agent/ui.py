@@ -72,6 +72,7 @@ class PromptCompleter(Completer):
                         dirs.clear()
             except Exception:
                 pass
+            return
 
         # 3. Dynamic directory autocompletion when typing '/cd ' or '/ls '
         clean_text = text_before.lstrip()
@@ -97,11 +98,11 @@ class PromptCompleter(Completer):
             try:
                 if os.path.exists(target_dir) and os.path.isdir(target_dir):
                     candidates = []
-                    if ".." .startswith(search_prefix.lower()):
+                    if "..".startswith(search_prefix.lower()):
                         candidates.append("..")
 
                     for item in sorted(os.listdir(target_dir)):
-                        if item.startswith(".") and item not in [".env", ".losnarc"]:
+                        if item.startswith(".") and not search_prefix.startswith(".") and item not in [".env", ".losnarc"]:
                             continue
                         full_item = os.path.join(target_dir, item)
                         if os.path.isdir(full_item):
@@ -318,6 +319,24 @@ def print_banner(model_name, project_path):
         right_text = text_lines[i] if i < len(text_lines) else ""
         print(f"{visual_logo[i]}   {right_text}")
     print()
+
+
+def print_session_header(session_id: int):
+    """
+    Renders banner, current session ID, auto-loaded context notice, and command hints.
+
+    Args:
+        session_id (int): Active session database ID.
+    """
+    from . import prompts
+    model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
+    project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
+    print_banner(model_display, project_path)
+    print(f"Current session: [{session_id}]")
+    auto_fname, auto_fpath, _ = prompts.load_auto_ai_context()
+    if auto_fname:
+        print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
+    print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/cd' change dir | '/init-ai' init blueprint | '/help' help menu | '/exit' or '/quit' to leave.\n")
 
     # Trigger update checker in a non-blocking background thread
     _trigger_async_update_check()

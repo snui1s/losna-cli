@@ -17,7 +17,38 @@ from . import plugin_manager
 from . import diff_utils
 from . import export_utils
 from . import mention_utils
-from .ui import print_banner
+from .ui import print_banner, print_session_header
+
+# Set of all built-in slash commands (used to detect unknown commands vs skill commands)
+RESERVED_COMMANDS = {
+    '/help', '/sessions', '/new', '/switch', '/delete_session', '/history',
+    '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff',
+    '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear',
+    '/ls', 'ls', '/cd', 'cd', '/init-ai', '/init_ai', '/initai',
+    '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call',
+    '/usage'
+}
+
+
+def _refresh_system_prompt(ctx):
+    """Refreshes system prompt content in context and conversation history."""
+    ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
+    if ctx["conversation_history"] and ctx["conversation_history"][0].get("role") == "system":
+        ctx["conversation_history"][0]["content"] = ctx["SYSTEM_PROMPT"]
+
+
+def _load_session(session_id, ctx):
+    """Loads a session's messages and system prompt into context."""
+    ctx["session_id"] = session_id
+    archived_count, last_summary = db.get_compaction_state(session_id)
+    loaded = db.load_messages(session_id, skip=archived_count)
+    ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(previous_summary=last_summary)
+
+    if not loaded or loaded[0].get("role") != "system":
+        ctx["conversation_history"] = [{"role": "system", "content": ctx["SYSTEM_PROMPT"]}, *loaded]
+    else:
+        loaded[0]["content"] = ctx["SYSTEM_PROMPT"]
+        ctx["conversation_history"] = loaded
 
 
 def handle_slash_command(user_input, ctx):
@@ -39,52 +70,50 @@ def handle_slash_command(user_input, ctx):
     lower = user_input.lower()
     command = user_input.split(maxsplit=1)[0].lower()
 
-    # --- Simple exact-match commands ---
-    if lower == "/help":
+    # --- Exact match & prefix dispatch by first command token ---
+    if command == "/help":
         return _cmd_help(ctx)
-    if lower == "/sessions":
+    if command == "/sessions":
         return _cmd_sessions(ctx)
-    if lower == "/pins":
+    if command == "/pins":
         return _cmd_pins()
-    if lower == "/usage":
-        return _cmd_usage(ctx)
-    if lower in ["/clear", "clear"]:
-        return _cmd_clear(ctx)
-
-    # --- Prefix-match commands ---
-    if lower.startswith("/new"):
-        return _cmd_new(user_input, ctx)
-    if lower.startswith("/switch"):
-        return _cmd_switch(user_input, ctx)
-    if lower.startswith("/delete_session"):
-        return _cmd_delete_session(user_input, ctx)
-    if lower.startswith("/history"):
-        return _cmd_history(user_input, ctx)
-    if lower.startswith("/plugin"):
-        return _cmd_plugin(user_input, ctx)
-    if lower.startswith("/model"):
-        return _cmd_model(user_input)
-    if lower.startswith("/readonly"):
-        return _cmd_readonly(user_input, ctx)
-    if lower.startswith("/diff"):
-        return _cmd_diff(user_input, ctx)
-    if lower.startswith("/enter2confirm"):
-        return _cmd_enter2confirm(user_input)
-    if lower.startswith("/pin"):
+    if command == "/pin":
         return _cmd_pin(user_input, ctx)
-    if lower.startswith("/unpin"):
+    if command == "/unpin":
         return _cmd_unpin(user_input, ctx)
-    if lower.startswith("/export"):
+    if command == "/usage":
+        return _cmd_usage(ctx)
+    if command in ("/clear", "clear"):
+        return _cmd_clear(ctx)
+    if command == "/new":
+        return _cmd_new(user_input, ctx)
+    if command == "/switch":
+        return _cmd_switch(user_input, ctx)
+    if command == "/delete_session":
+        return _cmd_delete_session(user_input, ctx)
+    if command == "/history":
+        return _cmd_history(user_input, ctx)
+    if command == "/plugin":
+        return _cmd_plugin(user_input, ctx)
+    if command == "/model":
+        return _cmd_model(user_input)
+    if command == "/readonly":
+        return _cmd_readonly(user_input, ctx)
+    if command == "/diff":
+        return _cmd_diff(user_input, ctx)
+    if command == "/enter2confirm":
+        return _cmd_enter2confirm(user_input)
+    if command == "/export":
         return _cmd_export(user_input, ctx)
-    if lower.startswith(("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call")):
+    if command in ("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call"):
         return _cmd_max_tool_calls(user_input)
-    if lower.startswith(("/init-ai", "/init_ai", "/initai")):
+    if command in ("/init-ai", "/init_ai", "/initai"):
         return _cmd_init_ai()
-    if lower.startswith(("/ls", "ls")):
+    if command in ("/ls", "ls"):
         return _cmd_ls(user_input)
-    if lower.startswith(("/cd", "cd ")):
+    if command in ("/cd", "cd"):
         return _cmd_cd(user_input)
-    if lower.startswith("/search"):
+    if command == "/search":
         return _cmd_search(user_input, ctx)
 
     # --- Dynamic skill commands ---
@@ -92,17 +121,6 @@ def handle_slash_command(user_input, ctx):
         return _cmd_skill(user_input, ctx)
 
     return False
-
-
-# Set of all built-in slash commands (used to detect unknown commands vs skill commands)
-RESERVED_COMMANDS = {
-    '/help', '/sessions', '/new', '/switch', '/delete_session', '/history',
-    '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff',
-    '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear',
-    '/ls', 'ls', '/cd', 'cd', '/init-ai', '/init_ai', '/initai',
-    '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call',
-    '/usage'
-}
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -178,16 +196,7 @@ def _cmd_new(user_input, ctx):
 def _cmd_switch(user_input, ctx):
     target = user_input[7:].strip()
     if target.isdigit() and db.session_exists(int(target)):
-        ctx["session_id"] = int(target)
-        archived_count, last_summary = db.get_compaction_state(ctx["session_id"])
-        loaded = db.load_messages(ctx["session_id"], skip=archived_count)
-        ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(previous_summary=last_summary)
-
-        if not loaded or loaded[0].get("role") != "system":
-            loaded = [{"role": "system", "content": ctx["SYSTEM_PROMPT"]}] + loaded
-        else:
-            loaded[0]["content"] = ctx["SYSTEM_PROMPT"]
-        ctx["conversation_history"] = loaded
+        _load_session(int(target), ctx)
         print(f"Switched to session [{ctx['session_id']}] with {len(ctx['conversation_history'])} message(s)\n")
     else:
         if not target:
@@ -251,7 +260,7 @@ def _cmd_history(user_input, ctx):
     has_messages = False
     for m in all_msgs:
         role = m.get("role", "unknown").upper()
-        content = m.get("content", "").strip()
+        content = (m.get("content") or "").strip()
         if role == "SYSTEM":
             continue
 
@@ -390,9 +399,7 @@ def _cmd_readonly(user_input, ctx):
     status_text = f"{CYAN}ENABLED (Read-Only Mode){RESET}" if config.READ_ONLY_MODE else f"{GREEN}DISABLED (Full Access){RESET}"
     print(f"  [System]: Read-Only Mode is now {status_text}\n")
 
-    ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-    if ctx["conversation_history"] and ctx["conversation_history"][0].get("role") == "system":
-        ctx["conversation_history"][0]["content"] = ctx["SYSTEM_PROMPT"]
+    _refresh_system_prompt(ctx)
     return True
 
 
@@ -460,9 +467,7 @@ def _cmd_pin(user_input, ctx):
         print("Usage: /pin <rule_text>  (e.g. '/pin Always use type hints')\n")
         return True
     db.save_memory_fact(rule_text, source_session_id=ctx["session_id"], is_pinned=True)
-    ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-    if ctx["conversation_history"] and ctx["conversation_history"][0].get("role") == "system":
-        ctx["conversation_history"][0]["content"] = ctx["SYSTEM_PROMPT"]
+    _refresh_system_prompt(ctx)
     print(f"  [System]: Pinned to Core Memory: '{rule_text}'\n")
     return True
 
@@ -475,9 +480,7 @@ def _cmd_unpin(user_input, ctx):
         return True
     success = db.delete_pinned_fact(target)
     if success:
-        ctx["SYSTEM_PROMPT"] = prompts.build_system_prompt(read_only=config.READ_ONLY_MODE)
-        if ctx["conversation_history"] and ctx["conversation_history"][0].get("role") == "system":
-            ctx["conversation_history"][0]["content"] = ctx["SYSTEM_PROMPT"]
+        _refresh_system_prompt(ctx)
         print(f"  [System]: Successfully unpinned Core Memory item [{target}]\n")
     else:
         print(f"  [System]: Could not find pinned Core Memory item matching '{target}'\n")
@@ -497,23 +500,24 @@ def _cmd_export(user_input, ctx):
 
 def _cmd_clear(ctx):
     os.system("cls" if os.name == "nt" else "clear")
-    model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
-    project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
-    print_banner(model_display, project_path)
-    print(f"Current session: [{ctx['session_id']}]")
-    print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
+    print_session_header(ctx["session_id"])
     return True
 
 
 def _cmd_max_tool_calls(user_input):
     parts = user_input.split()
-    if len(parts) > 1 and parts[1].isdigit():
-        new_val = int(parts[1])
-        if new_val > 0:
-            config.set_max_tool_calls(new_val)
-            print(f"  [System]: MAX_TOOL_CALLS limit updated and persisted to {new_val}\n")
+    if len(parts) > 1:
+        if parts[1].isdigit():
+            new_val = int(parts[1])
+            if new_val > 0:
+                config.set_max_tool_calls(new_val)
+                print(f"  [System]: MAX_TOOL_CALLS limit updated and persisted to {new_val}\n")
+            else:
+                print("Error: Please provide a positive integer greater than 0.\n")
         else:
             print("Error: Please provide a positive integer greater than 0.\n")
+    else:
+        print(f"  [System]: Current MAX_TOOL_CALLS limit: {config.MAX_TOOL_CALLS}\n")
     return True
 
 
