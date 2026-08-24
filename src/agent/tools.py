@@ -180,6 +180,7 @@ def search_in_files(keyword, folder_path="."):
         results = []
         
         for root, dirs, files in os.walk(target_path):
+            dirs[:] = [d for d in dirs if d not in {'.git', '.venv', 'venv', 'node_modules', '__pycache__', 'dist', 'build', '.tox', '.pytest_cache'} and not d.startswith('.')]
             for file in files:
                 if file.endswith(allowed_extensions):
                     file_path = os.path.join(root, file)
@@ -831,17 +832,13 @@ my_tools = [
         "type": "function",
         "function": {
             "name": "execute_shell_command",
-            "description": "Execute a shell command in the project working directory (e.g. running tests, checking git status, listing processes). Destructive or impactful commands (rm, mv, git push, pip install, kill, etc.) will be blocked unless 'confirmed' is set to true - if the tool returns CONFIRMATION_REQUIRED, ask the user to confirm before retrying with confirmed=true. Never attempt to bypass this by chaining commands or using sudo.",
+            "description": "Execute a shell command in the project working directory (e.g. running tests, checking git status, listing processes). Destructive or impactful commands (rm, mv, git push, pip install, kill, etc.) will automatically require interactive user confirmation before running.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
                         "description": "The exact shell command to run (e.g. 'ls -la', 'python -m pytest', 'git status')."
-                    },
-                    "confirmed": {
-                        "type": "boolean",
-                        "description": "Set to true only after the user has explicitly confirmed a dangerous command should proceed. Default is false."
                     }
                 },
                 "required": ["command"]
@@ -852,17 +849,13 @@ my_tools = [
         "type": "function",
         "function": {
             "name": "git_commit_and_push",
-            "description": "Stage all changes, commit with the given message, and push to the remote repository - in one call. Use this instead of execute_shell_command when the user wants to commit and push, since chained commands (&&) are not supported by execute_shell_command. Requires user confirmation before actually running (call once to get CONFIRMATION_REQUIRED, then again with confirmed=true after the user agrees). Recommended to run 'git status' and 'git diff' via execute_shell_command first if you need to inspect changes before writing the commit message.",
+            "description": "Stage all changes, commit with the given message, and push to the remote repository - in one call. Use this instead of execute_shell_command when the user wants to commit and push, since chained commands (&&) are not supported by execute_shell_command. Automatically triggers interactive user confirmation before proceeding.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "commit_message": {
                         "type": "string",
                         "description": "The commit message to use. Should be clear and descriptive of the changes."
-                    },
-                    "confirmed": {
-                        "type": "boolean",
-                        "description": "Set to true only after the user has explicitly confirmed the commit and push should proceed. Default is false."
                     }
                 },
                 "required": ["commit_message"]
@@ -955,7 +948,7 @@ def get_available_tools(read_only: bool = False):
     return [t for t in my_tools if t["function"]["name"] in READ_ONLY_TOOL_NAMES]
 
 
-def dispatch_tool(func_name, args, read_only: bool = False):
+def dispatch_tool(func_name, args, read_only: bool = False, user_confirmed: bool = False):
     """
     Central dispatcher for all agent tools. Handles:
       1. Time measurement (logging how long a tool takes)
@@ -1031,8 +1024,7 @@ def dispatch_tool(func_name, args, read_only: bool = False):
             
         elif func_name == "delete_local_file":
             filepath = args.get("filepath", "")
-            confirmed = args.get("confirmed", False)
-            tool_result = delete_local_file(filepath, confirmed=confirmed)
+            tool_result = delete_local_file(filepath, confirmed=user_confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: delete_local_file('{filepath}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
             
@@ -1045,15 +1037,13 @@ def dispatch_tool(func_name, args, read_only: bool = False):
 
         elif func_name == "execute_shell_command":
             shell_cmd = args.get("command", "")
-            confirmed = args.get("confirmed", False)
-            tool_result = execute_shell_command(shell_cmd, confirmed=confirmed)
+            tool_result = execute_shell_command(shell_cmd, confirmed=user_confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: execute_shell_command('{shell_cmd}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
 
         elif func_name == "git_commit_and_push":
             commit_msg = args.get("commit_message", "")
-            confirmed = args.get("confirmed", False)
-            tool_result = git_commit_and_push(commit_msg, confirmed=confirmed)
+            tool_result = git_commit_and_push(commit_msg, confirmed=user_confirmed)
             tool_end_time = time.time()
             print(f"  [Tool]: git_commit_and_push('{commit_msg}') => {tool_result} (took {tool_end_time - tool_start_time:.2f}s)")
 

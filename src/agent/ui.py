@@ -9,6 +9,16 @@ import threading
 import sys
 import time
 import os
+import json
+import re
+
+# Ensure UTF-8 output on Windows terminals
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.styles import Style
@@ -57,10 +67,12 @@ class PromptCompleter(Completer):
             try:
                 base_dir = os.getcwd()
                 rel_prefix = mention_prefix.replace("\\", "/")
+                # Directories to skip during file mention autocomplete
+                _SKIP_DIRS = {'.git', '.venv', 'venv', '__pycache__', 'node_modules', '.mypy_cache', '.pytest_cache', 'dist', 'build', '.tox', '.eggs'}
 
                 count = 0
                 for root, dirs, files in os.walk(base_dir):
-                    dirs[:] = [d for d in dirs if not d.startswith('.')]
+                    dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith('.')]
                     for file in files:
                         rel_path = os.path.relpath(os.path.join(root, file), base_dir).replace("\\", "/")
                         if rel_path.lower().startswith(rel_prefix.lower()):
@@ -165,7 +177,11 @@ class Spinner:
                         if ch in (b'\x1b', b'\x03'):  # ESC key or Ctrl+C
                             import _thread
                             self.stop_event.set()
-                            sys.stdout.write("\r" + " " * 80 + "\r")
+                            try:
+                                _cols = os.get_terminal_size().columns
+                            except (ValueError, OSError):
+                                _cols = 120
+                            sys.stdout.write("\r" + " " * _cols + "\r")
                             sys.stdout.flush()
                             _thread.interrupt_main()
                             break
@@ -180,7 +196,11 @@ class Spinner:
             idx += 1
             self.stop_event.wait(0.25)
 
-        sys.stdout.write("\r" + " " * 80 + "\r")
+        try:
+            cols = os.get_terminal_size().columns
+        except (ValueError, OSError):
+            cols = 120
+        sys.stdout.write("\r" + " " * cols + "\r")
         sys.stdout.flush()
 
     def start(self):
@@ -197,6 +217,159 @@ class Spinner:
                 self.thread.join(timeout=0.5)
             except Exception:
                 pass
+
+
+class StreamBorderRenderer:
+    """
+    Modern Border Stream Renderer with Real-time Lightweight Markdown Styler:
+    Renders streamed agent responses live with sleek borders and formats
+    Markdown headers, bold text, lists, and code blocks on the fly.
+    """
+    P1 = "\033[38;5;97m"    # Soft Muted Purple
+    P2 = "\033[38;5;98m"    # Soft Lavender Purple
+    P3 = "\033[38;5;140m"   # Soft Lilac Violet
+    P4 = "\033[38;5;141m"   # Soft Light Violet Glow
+    GOLD = "\033[1;38;5;220m"
+    AMBER = "\033[1;38;5;214m"
+    LILAC = "\033[1;38;5;184m"
+    CYAN = "\033[1;36m"
+    GREEN = "\033[38;5;120m"
+    CODE_TEXT = "\033[38;5;153m"
+    GRAY = "\033[38;5;244m"
+    WHITE_BOLD = "\033[1;38;5;255m"
+    WHITE = "\033[38;5;253m"
+    RESET = "\033[0m"
+
+    def __init__(self):
+        self.started = False
+        self.line_buffer = ""
+        self.in_code_block = False
+        self.code_lang = ""
+        try:
+            self.cols = min(os.get_terminal_size().columns, 85)
+        except (ValueError, OSError):
+            self.cols = 80
+
+    def _style_inline(self, text: str) -> str:
+        """Applies inline styles like **bold**, `code`, and [links]."""
+        # Bold: **text** -> bold white
+        text = re.sub(r'\*\*(.+?)\*\*', f'{self.WHITE_BOLD}\\1{self.RESET}{self.WHITE}', text)
+        # Inline code: `code` -> soft green
+        text = re.sub(r'`([^`]+)`', f'{self.GREEN}\\1{self.RESET}{self.WHITE}', text)
+        # Links: [text](url) -> underlined blue
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', f'\033[4;38;5;75m\\1{self.RESET}{self.WHITE} ({self.GRAY}\\2{self.RESET}{self.WHITE})', text)
+        return text
+
+    def _style_line(self, line: str) -> str:
+        """Transforms a complete line of markdown into styled terminal output."""
+        stripped = line.strip()
+
+        # Check for code fence
+        if stripped.startswith("```"):
+            if not self.in_code_block:
+                self.in_code_block = True
+                lang = stripped[3:].strip()
+                lang_tag = f" [{lang}]" if lang else ""
+                bar_len = max(self.cols - len(lang_tag) - 10, 8)
+                return f"{self.P1}┌──{self.P2}{lang_tag}{self.P1}{'─' * bar_len}{self.RESET}"
+            else:
+                self.in_code_block = False
+                bar_len = max(self.cols - 10, 8)
+                return f"{self.P1}└──{'─' * bar_len}{self.RESET}"
+
+        if self.in_code_block:
+            # Code block line
+            return f"{self.CODE_TEXT}{line}{self.RESET}"
+
+        # Headers
+        if line.startswith("# "):
+            return f"{self.GOLD}{line[2:]}{self.RESET}"
+        elif line.startswith("## "):
+            return f"{self.AMBER}{line[3:]}{self.RESET}"
+        elif line.startswith("### "):
+            return f"{self.LILAC}{line[4:]}{self.RESET}"
+        elif line.startswith("#### "):
+            return f"{self.LILAC}{line[5:]}{self.RESET}"
+
+        # Bullet points: - item, * item, + item
+        if re.match(r'^\s*[-*+]\s+', line):
+            prefix_spaces = len(line) - len(line.lstrip())
+            item_text = re.sub(r'^\s*[-*+]\s+', '', line)
+            indent = " " * prefix_spaces
+            return f"{indent}{self.GOLD}•{self.RESET} {self.WHITE}{self._style_inline(item_text)}{self.RESET}"
+
+        # Numbered list: 1. item
+        m_num = re.match(r'^(\s*)(\d+\.)\s+(.*)$', line)
+        if m_num:
+            indent, num, rest = m_num.groups()
+            return f"{indent}{self.CYAN}{num}{self.RESET} {self.WHITE}{self._style_inline(rest)}{self.RESET}"
+
+        # Blockquote: > text
+        if line.startswith("> "):
+            return f"{self.GOLD}▌{self.RESET} {self.GRAY}{self._style_inline(line[2:])}{self.RESET}"
+
+        # Horizontal rule: --- or ***
+        if stripped in ("---", "***", "___") and len(stripped) >= 3:
+            return f"{self.P1}{'─' * (self.cols - 8)}{self.RESET}"
+
+        # Normal text with inline styling
+        return f"{self.WHITE}{self._style_inline(line)}{self.RESET}"
+
+    def on_token(self, delta: str):
+        """Processes incoming stream chunks, styling lines with left border."""
+        if not delta:
+            return
+
+        if not self.started:
+            self.started = True
+            header = " 🤖 Agent "
+            bar_len = max(self.cols - len(header) - 3, 10)
+            sys.stdout.write(f"\n{self.P4}╭─{self.RESET}{self.P3}{header}{self.RESET}{self.P1}{'─' * bar_len}{self.RESET}\n")
+            sys.stdout.write(f"{self.P1}│{self.RESET} ")
+            sys.stdout.flush()
+
+        self.line_buffer += delta
+
+        # Process all complete lines ending in \n
+        while "\n" in self.line_buffer:
+            line, self.line_buffer = self.line_buffer.split("\n", 1)
+            styled_line = self._style_line(line)
+            sys.stdout.write(f"{styled_line}\n{self.P1}│{self.RESET} ")
+            sys.stdout.flush()
+
+    def finish(self, duration: float = 0.0, usage_info: str = ""):
+        """Flushes any remaining line buffer and prints the bottom border."""
+        if not self.started:
+            return
+
+        if self.line_buffer:
+            styled_line = self._style_line(self.line_buffer)
+            sys.stdout.write(styled_line)
+            self.line_buffer = ""
+
+        footer = f" ⏱️ {duration:.2f}s{usage_info} "
+        bar_len = max(self.cols - len(footer) - 3, 10)
+        sys.stdout.write(f"\n{self.P4}╰─{self.RESET}{self.GRAY}{footer}{self.RESET}{self.P1}{'─' * bar_len}{self.RESET}\n\n")
+        sys.stdout.flush()
+
+    def finish_intermediate(self):
+        """Flushes buffer and closes border for intermediate tool calling."""
+        if not self.started:
+            return
+
+        if self.line_buffer:
+            styled_line = self._style_line(self.line_buffer)
+            sys.stdout.write(styled_line)
+            self.line_buffer = ""
+
+        bar_len = max(self.cols - 4, 10)
+        sys.stdout.write(f"\n{self.P4}╰─{self.RESET}{self.P1}{'─' * bar_len}{self.RESET}\n")
+        sys.stdout.flush()
+
+    def render_fallback(self, content: str, duration: float = 0.0, usage_info: str = ""):
+        """Renders the entire response in a styled border block if streaming was not used."""
+        self.on_token(content)
+        self.finish(duration, usage_info)
 
 
 # Custom styles for the CLI prompt and autocomplete dropdown menu
@@ -349,6 +522,7 @@ def _trigger_async_update_check():
     """
     import urllib.request
     from . import skills_loader
+    # json is imported at module level
 
     GREEN = "\033[38;5;120m"
     GRAY = "\033[38;5;244m"
