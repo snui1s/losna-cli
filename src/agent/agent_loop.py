@@ -13,7 +13,7 @@ from . import config
 from . import db
 from . import diff_utils
 from .tools import dispatch_tool, get_available_tools
-from .ui import Spinner, print_agent_response
+from .ui import Spinner, StreamBorderRenderer
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -108,12 +108,28 @@ def run_agent_loop(ctx):
                 tool_calls_acc = {}
                 first_token_received = False
                 last_usage = None
+                renderer = StreamBorderRenderer()
 
                 try:
+                    import re
+                    has_thai = any(
+                        bool(re.search(r'[\u0e00-\u0e7f]', str(m.get("content", ""))))
+                        for m in conversation_history if m.get("role") == "user"
+                    )
+
+                    payload_messages = list(conversation_history)
+                    if has_thai and payload_messages and payload_messages[0].get("role") == "system":
+                        sys_content = payload_messages[0].get("content")
+                        if isinstance(sys_content, str) and "[STRICT THAI LANGUAGE ENFORCEMENT]" not in sys_content:
+                            payload_messages[0] = {
+                                **payload_messages[0],
+                                "content": sys_content + "\n\n[STRICT THAI LANGUAGE ENFORCEMENT: The user is writing in Thai (ภาษาไทย). You MUST answer 100% in natural Thai. Absolutely NEVER output any Chinese characters (中文 / 汉字) or other foreign languages.]"
+                            }
+
                     active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
                     stream_gen = client.chat.send(
                         model=config.MODEL_NAME,
-                        messages=conversation_history,
+                        messages=payload_messages,
                         tools=active_tools,
                         stream=True
                     )
@@ -138,10 +154,7 @@ def run_agent_loop(ctx):
                             if not first_token_received:
                                 spinner.stop()
                                 first_token_received = True
-                                sys.stdout.write("\n  \033[1;35m🤖 Agent\033[0m: ")
-                                sys.stdout.flush()
-                            sys.stdout.write(c_delta)
-                            sys.stdout.flush()
+                            renderer.on_token(c_delta)
                             full_content += c_delta
 
                         # Tool calls delta
@@ -177,10 +190,6 @@ def run_agent_loop(ctx):
                         cost=getattr(last_usage, "cost", 0.0)
                     )
 
-                if first_token_received:
-                    sys.stdout.write("\n\n")
-                    sys.stdout.flush()
-
                 built_tcs = [
                     StreamedToolCall(v["id"], v["function"]["name"], v["function"]["arguments"])
                     for v in tool_calls_acc.values()
@@ -190,6 +199,9 @@ def run_agent_loop(ctx):
                     print(f"  [DEBUG] API call returned in {agent_duration:.2f}s | has_tool_calls={bool(message.tool_calls)}")
 
                 if hasattr(message, 'tool_calls') and message.tool_calls:
+                    if first_token_received:
+                        renderer.finish_intermediate()
+
                     if tool_call_count >= config.MAX_TOOL_CALLS:
                         print("  \033[1;31m[System]: Too many tool calls. Forcing stop to prevent infinite loop.\033[0m")
                         ctx["conversation_history"] = list(safe_history_backup)
@@ -221,8 +233,8 @@ def run_agent_loop(ctx):
                         tool_spinner.start()
 
                         try:
-                            # Run the dispatcher
-                            tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
+                            # Run the dispatcher (user_confirmed=False ensures initial check)
+                            tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE, user_confirmed=False)
 
                             # Handle interactive soft-block confirmation prompts
                             if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
@@ -230,11 +242,10 @@ def run_agent_loop(ctx):
 
                                 confirm_prompt = input(f"\n{RED}[!!!]{RESET} Agent requests to execute dangerous command:\n  '{args.get('command') or args.get('command_line') or func_name}'\nAllow execution? ({GREEN}y{RESET}/{RED}n{RESET}): ").strip().lower()
                                 if confirm_prompt == 'y':
-                                    args['confirmed'] = True
                                     tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary} (Confirmed)")
                                     tool_spinner.start()
                                     try:
-                                        tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE)
+                                        tool_result = dispatch_tool(func_name, args, read_only=config.READ_ONLY_MODE, user_confirmed=True)
                                     finally:
                                         tool_spinner.stop()
                                 else:
@@ -295,8 +306,10 @@ def run_agent_loop(ctx):
                         if tot_tokens > 0:
                             usage_info = f" · {tot_tokens:,} tokens{cost_str}"
 
-                    # Render signature Rich Markdown panel for the agent response
-                    print_agent_response(answer, agent_duration, usage_info=usage_info)
+                    if first_token_received:
+                        renderer.finish(agent_duration, usage_info)
+                    else:
+                        renderer.render_fallback(answer, agent_duration, usage_info)
 
                     conversation_history.append({"role": "assistant", "content": answer})
                     db.save_message(current_session_id, "assistant", answer)

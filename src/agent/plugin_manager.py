@@ -55,6 +55,8 @@ def install_plugin(repo_url: str, skill_name: str = None) -> str:
         # Scenario A: User specified a particular skill folder name
         if skill_name:
             skill_name = skill_name.strip()
+            if "/" in skill_name or "\\" in skill_name or ".." in skill_name:
+                return "Error: Invalid skill name (path traversal not allowed)."
             candidates = [
                 os.path.join(temp_dir, "skills", skill_name),
                 os.path.join(temp_dir, skill_name)

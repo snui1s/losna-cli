@@ -27,18 +27,22 @@ if home_config_path.exists():
 
 def get_or_prompt_key(env_name: str, display_name: str) -> str:
     """
-    Retrieves key from global config ~/.losnarc, or prompts user interactively.
+    Retrieves key from environment variable or global config ~/.losnarc, or prompts user interactively.
 
     Args:
-        env_name (str): Configuration key name in ~/.losnarc.
+        env_name (str): Configuration key name in ~/.losnarc or os.environ.
         display_name (str): Human-readable name for terminal prompt.
 
     Returns:
         str: The retrieved or entered API key string.
     """
-    val = global_config.get(env_name)
+    val = os.environ.get(env_name) or global_config.get(env_name)
     if val:
         return val
+
+    import sys
+    if os.environ.get("PYTEST_CURRENT_TEST") or not sys.stdin.isatty():
+        return ""
 
     print(f"\n\033[1;33m[Losna Config]:\033[0m {display_name} not found.")
     user_val = input(f"Please enter your {display_name}: ").strip()
@@ -171,20 +175,24 @@ def enable_skill(skill_name: str):
 OPENROUTER_API_KEY = get_or_prompt_key("OPENROUTER_API_KEY", "OpenRouter API Key")
 
 # Resolve Tavily key dynamically
-TAVILY_API_KEY = global_config.get("TAVILY_API_KEY")
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY") or global_config.get("TAVILY_API_KEY")
 # If not saved, ask if they want to enable the web search feature
-if TAVILY_API_KEY is None and "TAVILY_ENABLED" not in global_config:
-    print(f"\n\033[1;33m[Losna Config]:\033[0m Do you want to enable the Web Search feature? (y/n)")
-    ans = input("Answer (default: n): ").strip().lower()
-    if ans == 'y':
-        TAVILY_API_KEY = get_or_prompt_key("TAVILY_API_KEY", "Tavily API Key")
-        global_config["TAVILY_ENABLED"] = True
-    else:
-        global_config["TAVILY_ENABLED"] = False
+if TAVILY_API_KEY is None and "TAVILY_ENABLED" not in global_config and "TAVILY_API_KEY" not in os.environ:
+    import sys
+    if os.environ.get("PYTEST_CURRENT_TEST") or not sys.stdin.isatty():
         TAVILY_API_KEY = ""
-    # Save selection state
-    try:
-        with open(home_config_path, "w", encoding="utf-8") as f:
-            json.dump(global_config, f, indent=4)
-    except Exception:
-        pass
+    else:
+        print(f"\n\033[1;33m[Losna Config]:\033[0m Do you want to enable the Web Search feature? (y/n)")
+        ans = input("Answer (default: n): ").strip().lower()
+        if ans == 'y':
+            TAVILY_API_KEY = get_or_prompt_key("TAVILY_API_KEY", "Tavily API Key")
+            global_config["TAVILY_ENABLED"] = True
+        else:
+            global_config["TAVILY_ENABLED"] = False
+            TAVILY_API_KEY = ""
+        # Save selection state
+        try:
+            with open(home_config_path, "w", encoding="utf-8") as f:
+                json.dump(global_config, f, indent=4)
+        except Exception:
+            pass
