@@ -11,6 +11,7 @@ import time
 import os
 import json
 import re
+import unicodedata
 
 # Ensure UTF-8 output on Windows terminals
 if sys.platform == "win32":
@@ -221,9 +222,10 @@ class Spinner:
 
 class StreamBorderRenderer:
     """
-    Modern Border Stream Renderer with Real-time Lightweight Markdown Styler:
-    Renders streamed agent responses live with sleek borders and formats
-    Markdown headers, bold text, lists, and code blocks on the fly.
+    Modern Border Stream Renderer with Real-time Markdown Styler & Table Auto-Aligner:
+    Renders streamed agent responses live with sleek borders, formats Markdown
+    headers, bold text, lists, and code blocks, and auto-aligns Markdown tables into
+    Unicode box-drawing tables.
     """
     P1 = "\033[38;5;97m"    # Soft Muted Purple
     P2 = "\033[38;5;98m"    # Soft Lavender Purple
@@ -245,15 +247,216 @@ class StreamBorderRenderer:
         self.line_buffer = ""
         self.in_code_block = False
         self.code_lang = ""
+        self.table_buffer = []
         try:
             self.cols = min(os.get_terminal_size().columns, 85)
         except (ValueError, OSError):
             self.cols = 80
 
+    def _strip_markdown(self, text: str) -> str:
+        """Removes inline markdown delimiters for accurate visual length measurement."""
+        text = re.sub(r'\033\[[0-9;]*m', '', text)
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        text = re.sub(r'__(.+?)__', r'\1', text)
+        text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', text)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        return text
+
+    def _display_width(self, text: str) -> int:
+        """Calculates visual terminal width handling Thai combining vowels, emojis, and inline markdown."""
+        clean = self._strip_markdown(text)
+        w = 0
+        for ch in clean:
+            cat = unicodedata.category(ch)
+            if cat in ('Mn', 'Me', 'Cf'):  # Combining marks (Thai vowels/tones)
+                continue
+            eaw = unicodedata.east_asian_width(ch)
+            if eaw in ('W', 'F'):
+                w += 2
+            else:
+                w += 1
+        return w
+
+    def _wrap_cell_text(self, text: str, max_w: int) -> list[str]:
+        """Wraps cell text across multiple lines so each line visual width <= max_w."""
+        if not text:
+            return [""]
+        if self._display_width(text) <= max_w:
+            return [text]
+
+        words = text.split(" ")
+        lines = []
+        current_line = ""
+
+        for word in words:
+            if not current_line:
+                if self._display_width(word) > max_w:
+                    chunk = ""
+                    for ch in word:
+                        ch_w = 0 if unicodedata.category(ch) in ('Mn', 'Me', 'Cf') else (2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1)
+                        if self._display_width(chunk) + ch_w > max_w:
+                            lines.append(chunk)
+                            chunk = ch
+                        else:
+                            chunk += ch
+                    current_line = chunk
+                else:
+                    current_line = word
+            else:
+                candidate = f"{current_line} {word}"
+                if self._display_width(candidate) <= max_w:
+                    current_line = candidate
+                else:
+                    lines.append(current_line)
+                    if self._display_width(word) > max_w:
+                        chunk = ""
+                        for ch in word:
+                            ch_w = 0 if unicodedata.category(ch) in ('Mn', 'Me', 'Cf') else (2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1)
+                            if self._display_width(chunk) + ch_w > max_w:
+                                lines.append(chunk)
+                                chunk = ch
+                            else:
+                                chunk += ch
+                        current_line = chunk
+                    else:
+                        current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        return lines or [""]
+
+    def _pad_to_width(self, text: str, target_width: int) -> str:
+        """Pads string with spaces to reach exact visual terminal width."""
+        w = self._display_width(text)
+        return text + " " * max(0, target_width - w)
+
+    def _is_table_row(self, line: str) -> bool:
+        """Checks if line looks like a markdown table row."""
+        stripped = line.strip()
+        return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+
+    def _is_table_separator(self, line: str) -> bool:
+        """Checks if line is a markdown table separator like |---|---|."""
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            return False
+        cells = [c.strip() for c in stripped[1:-1].split("|")]
+        return all(re.match(r'^:?-+:?$', c) for c in cells if c)
+
+    def _render_table(self, rows: list[str]) -> list[str]:
+        """Parses raw markdown table rows and renders a beautiful aligned Unicode box table with multi-line cell wrapping."""
+        parsed_rows = []
+        has_separator = False
+
+        for r in rows:
+            if self._is_table_separator(r):
+                has_separator = True
+                continue
+            cells = [c.strip() for c in r.strip()[1:-1].split("|")]
+            parsed_rows.append(cells)
+
+        if not parsed_rows:
+            return rows
+
+        num_cols = max(len(r) for r in parsed_rows)
+        for r in parsed_rows:
+            while len(r) < num_cols:
+                r.append("")
+
+        # Calculate natural max width per column
+        col_widths = [4] * num_cols
+        for r in parsed_rows:
+            for i, cell in enumerate(r):
+                col_widths[i] = max(col_widths[i], self._display_width(cell))
+
+        # Dynamically determine max table width based on current terminal size
+        try:
+            current_term_cols = os.get_terminal_size().columns
+        except (ValueError, OSError):
+            current_term_cols = self.cols
+        max_table_width = max(current_term_cols - 6, 30)
+
+        # Check if table exceeds max_table_width and adjust proportionally
+        overhead = 1 + num_cols * 3  # Borders and cell padding: '│ ' and ' │'
+        total_needed = sum(col_widths) + overhead
+
+        if total_needed > max_table_width:
+            avail_budget = max_table_width - overhead
+            min_w = 6
+            if avail_budget < num_cols * min_w:
+                avail_budget = num_cols * min_w
+
+            allocated = [min_w] * num_cols
+            rem_budget = avail_budget - (num_cols * min_w)
+
+            excess_widths = [max(0, w - min_w) for w in col_widths]
+            total_excess = sum(excess_widths)
+
+            if total_excess > 0:
+                for i in range(num_cols):
+                    add_w = int(rem_budget * (excess_widths[i] / total_excess))
+                    allocated[i] += add_w
+                diff = avail_budget - sum(allocated)
+                if diff > 0:
+                    widest_indices = sorted(range(num_cols), key=lambda idx: col_widths[idx], reverse=True)
+                    for k in range(min(diff, num_cols)):
+                        allocated[widest_indices[k]] += 1
+                col_widths = allocated
+            else:
+                col_widths = [max(min_w, avail_budget // num_cols)] * num_cols
+
+        top_border = f"{self.P1}┌" + "┬".join("─" * (w + 2) for w in col_widths) + f"┐{self.RESET}"
+        mid_border = f"{self.P1}├" + "┼".join("─" * (w + 2) for w in col_widths) + f"┤{self.RESET}"
+        bot_border = f"{self.P1}└" + "┴".join("─" * (w + 2) for w in col_widths) + f"┘{self.RESET}"
+
+        rendered = [top_border]
+
+        for row_idx, r in enumerate(parsed_rows):
+            is_header = (row_idx == 0 and has_separator)
+
+            # Wrap each cell in this row into multi-line chunks
+            wrapped_cells = [self._wrap_cell_text(cell, col_widths[i]) for i, cell in enumerate(r)]
+            max_sublines = max(len(w_cell) for w_cell in wrapped_cells)
+
+            for sub_idx in range(max_sublines):
+                formatted_cells = []
+                for i in range(num_cols):
+                    sub_text = wrapped_cells[i][sub_idx] if sub_idx < len(wrapped_cells[i]) else ""
+                    styled_sub = self._style_inline(sub_text)
+                    padded = self._pad_to_width(styled_sub, col_widths[i])
+                    if is_header:
+                        formatted_cells.append(f" {self.GOLD}{padded}{self.RESET} ")
+                    else:
+                        formatted_cells.append(f" {self.WHITE}{padded}{self.RESET} ")
+
+                row_line = f"{self.P1}│{self.RESET}" + f"{self.P1}│{self.RESET}".join(formatted_cells) + f"{self.P1}│{self.RESET}"
+                rendered.append(row_line)
+
+            if is_header:
+                rendered.append(mid_border)
+
+        rendered.append(bot_border)
+        return rendered
+
+    def _flush_table_buffer(self):
+        """Flushes buffered table rows to stdout as a styled box table."""
+        if not self.table_buffer:
+            return
+        rendered_lines = self._render_table(self.table_buffer)
+        self.table_buffer = []
+        for line in rendered_lines:
+            sys.stdout.write(f"{line}\n{self.P1}│{self.RESET} ")
+        sys.stdout.flush()
+
     def _style_inline(self, text: str) -> str:
-        """Applies inline styles like **bold**, `code`, and [links]."""
-        # Bold: **text** -> bold white
+        """Applies inline styles like **bold**, `code`, and [links], cleanly removing raw delimiters."""
+        # Bold: **text** or __text__ -> bold white
         text = re.sub(r'\*\*(.+?)\*\*', f'{self.WHITE_BOLD}\\1{self.RESET}{self.WHITE}', text)
+        text = re.sub(r'__(.+?)__', f'{self.WHITE_BOLD}\\1{self.RESET}{self.WHITE}', text)
+        # Italic / Single asterisk: *text* -> bold white
+        text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', f'{self.WHITE_BOLD}\\1{self.RESET}{self.WHITE}', text)
         # Inline code: `code` -> soft green
         text = re.sub(r'`([^`]+)`', f'{self.GREEN}\\1{self.RESET}{self.WHITE}', text)
         # Links: [text](url) -> underlined blue
@@ -282,14 +485,18 @@ class StreamBorderRenderer:
             return f"{self.CODE_TEXT}{line}{self.RESET}"
 
         # Headers
-        if line.startswith("# "):
-            return f"{self.GOLD}{line[2:]}{self.RESET}"
-        elif line.startswith("## "):
-            return f"{self.AMBER}{line[3:]}{self.RESET}"
-        elif line.startswith("### "):
-            return f"{self.LILAC}{line[4:]}{self.RESET}"
-        elif line.startswith("#### "):
-            return f"{self.LILAC}{line[5:]}{self.RESET}"
+        if stripped.startswith("# "):
+            header_text = self._strip_markdown(stripped[2:])
+            return f"{self.GOLD}{header_text}{self.RESET}"
+        elif stripped.startswith("## "):
+            header_text = self._strip_markdown(stripped[3:])
+            return f"{self.AMBER}{header_text}{self.RESET}"
+        elif stripped.startswith("### "):
+            header_text = self._strip_markdown(stripped[4:])
+            return f"{self.LILAC}{header_text}{self.RESET}"
+        elif stripped.startswith("#### "):
+            header_text = self._strip_markdown(stripped[5:])
+            return f"{self.LILAC}{header_text}{self.RESET}"
 
         # Bullet points: - item, * item, + item
         if re.match(r'^\s*[-*+]\s+', line):
@@ -304,9 +511,12 @@ class StreamBorderRenderer:
             indent, num, rest = m_num.groups()
             return f"{indent}{self.CYAN}{num}{self.RESET} {self.WHITE}{self._style_inline(rest)}{self.RESET}"
 
-        # Blockquote: > text
-        if line.startswith("> "):
-            return f"{self.GOLD}▌{self.RESET} {self.GRAY}{self._style_inline(line[2:])}{self.RESET}"
+        # Blockquote: > text or empty >
+        if stripped.startswith(">"):
+            quote_text = stripped[1:].lstrip()
+            if not quote_text:
+                return f"{self.GOLD}▌{self.RESET}"
+            return f"{self.GOLD}▌{self.RESET} {self.WHITE}{self._style_inline(quote_text)}{self.RESET}"
 
         # Horizontal rule: --- or ***
         if stripped in ("---", "***", "___") and len(stripped) >= 3:
@@ -333,9 +543,15 @@ class StreamBorderRenderer:
         # Process all complete lines ending in \n
         while "\n" in self.line_buffer:
             line, self.line_buffer = self.line_buffer.split("\n", 1)
-            styled_line = self._style_line(line)
-            sys.stdout.write(f"{styled_line}\n{self.P1}│{self.RESET} ")
-            sys.stdout.flush()
+
+            # Table row handling
+            if self._is_table_row(line) or self._is_table_separator(line):
+                self.table_buffer.append(line)
+            else:
+                self._flush_table_buffer()
+                styled_line = self._style_line(line)
+                sys.stdout.write(f"{styled_line}\n{self.P1}│{self.RESET} ")
+                sys.stdout.flush()
 
     def finish(self, duration: float = 0.0, usage_info: str = ""):
         """Flushes any remaining line buffer and prints the bottom border."""
@@ -343,9 +559,15 @@ class StreamBorderRenderer:
             return
 
         if self.line_buffer:
-            styled_line = self._style_line(self.line_buffer)
-            sys.stdout.write(styled_line)
+            if self._is_table_row(self.line_buffer) or self._is_table_separator(self.line_buffer):
+                self.table_buffer.append(self.line_buffer)
+            else:
+                self._flush_table_buffer()
+                styled_line = self._style_line(self.line_buffer)
+                sys.stdout.write(styled_line)
             self.line_buffer = ""
+
+        self._flush_table_buffer()
 
         footer = f" ⏱️ {duration:.2f}s{usage_info} "
         bar_len = max(self.cols - len(footer) - 3, 10)
@@ -358,9 +580,15 @@ class StreamBorderRenderer:
             return
 
         if self.line_buffer:
-            styled_line = self._style_line(self.line_buffer)
-            sys.stdout.write(styled_line)
+            if self._is_table_row(self.line_buffer) or self._is_table_separator(self.line_buffer):
+                self.table_buffer.append(self.line_buffer)
+            else:
+                self._flush_table_buffer()
+                styled_line = self._style_line(self.line_buffer)
+                sys.stdout.write(styled_line)
             self.line_buffer = ""
+
+        self._flush_table_buffer()
 
         bar_len = max(self.cols - 4, 10)
         sys.stdout.write(f"\n{self.P4}╰─{self.RESET}{self.P1}{'─' * bar_len}{self.RESET}\n")
