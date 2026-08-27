@@ -300,6 +300,36 @@ def load_messages(session_id, skip=0):
         conn.close()
 
 
+def get_last_message_id(session_id: int) -> int:
+    """Return the highest message ID in a session, or 0 if no messages exist."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(id) as max_id FROM messages WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        return row["max_id"] if row and row["max_id"] is not None else 0
+    finally:
+        conn.close()
+
+
+def delete_messages_after(session_id: int, message_id: int):
+    """Delete all messages in a session with id > message_id (used to roll back aborted turns)."""
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM messages WHERE session_id = ? AND id > ?",
+            (session_id, message_id)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def get_last_session_message(session_id):
     """Fetch the most recent user or assistant message for a session."""
     conn = get_connection()

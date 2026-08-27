@@ -38,16 +38,19 @@ def select_session():
             last_msg = s.get("last_message")
             if last_msg:
                 role = last_msg.get("role", "").lower()
-                content = (last_msg.get("content") or "").strip().splitlines()[0]
-                if len(content) > 75:
-                    content = content[:72] + "..."
-                if role == "user":
-                    badge = f"{GREEN}🧑 You:{RESET}"
-                elif role == "assistant":
-                    badge = f"{GOLD}🌒 Losna:{RESET}"
-                else:
-                    badge = f"{GRAY}[{role}]:{RESET}"
-                print(f"      {DARK_GRAY}└─{RESET} {badge} {GRAY}\"{content}\"{RESET}")
+                raw_content = (last_msg.get("content") or "").strip()
+                lines = raw_content.splitlines()
+                content = lines[0].strip() if lines else ""
+                if content:
+                    if len(content) > 75:
+                        content = content[:72] + "..."
+                    if role == "user":
+                        badge = f"{GREEN}🧑 You:{RESET}"
+                    elif role == "assistant":
+                        badge = f"{GOLD}🌒 Losna:{RESET}"
+                    else:
+                        badge = f"{GRAY}[{role}]:{RESET}"
+                    print(f"      {DARK_GRAY}└─{RESET} {badge} {GRAY}\"{content}\"{RESET}")
         print(f"\nType a session ID {GRAY}(or press Enter for [{default_sid}]){RESET}, or {CYAN}'/new <title>'{RESET} to start a new chat.\n")
     else:
         print("\nNo existing sessions yet. Start one with '/new <title>'.\n")
