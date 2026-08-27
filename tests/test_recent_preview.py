@@ -75,3 +75,19 @@ def test_session_select_default_on_enter(tmp_path, monkeypatch):
         chosen_id, history = session.select_session()
         assert chosen_id == sid
         assert len(history) >= 2
+
+
+def test_session_preview_with_empty_or_whitespace_last_message(tmp_path, monkeypatch):
+    """Test that session selection and preview handle empty or tool-only assistant messages without crashing."""
+    test_db = str(tmp_path / "test_empty_msg.db")
+    monkeypatch.setattr(db, "DB_PATH", test_db)
+
+    db.init_db()
+    sid = db.create_session("Tool Only Session")
+    # Save a tool-only assistant message (empty content)
+    db.save_message(sid, "assistant", "", tool_calls_json='[{"id": "call_1"}]')
+
+    with patch("builtins.input", return_value=str(sid)):
+        chosen_id, history = session.select_session()
+        assert chosen_id == sid
+

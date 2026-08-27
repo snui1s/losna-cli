@@ -90,6 +90,7 @@ def run_agent_loop(ctx):
 
     # Take a backup snapshot for clean recovery on errors
     safe_history_backup = list(conversation_history)
+    start_message_id = db.get_last_message_id(current_session_id)
 
     while attempt < config.MAX_RETRIES:
         try:
@@ -302,6 +303,7 @@ def run_agent_loop(ctx):
                         else:
                             print(f"  {RED}[System]: Operation aborted by user. Reverting to previous state.{RESET}\n")
                             ctx["conversation_history"] = list(safe_history_backup)
+                            db.delete_messages_after(current_session_id, start_message_id)
                             break
 
                     # Colored output for system decisions
@@ -417,6 +419,7 @@ def run_agent_loop(ctx):
             RESET = "\033[0m"
             print(f"\n{RED}  [System]: Operation canceled by user (Esc pressed).{RESET}\n")
             ctx["conversation_history"] = list(safe_history_backup)
+            db.delete_messages_after(current_session_id, start_message_id)
             break
         except Exception as e:
             attempt += 1

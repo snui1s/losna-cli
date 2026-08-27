@@ -2,6 +2,7 @@ import os
 from unittest.mock import patch, MagicMock
 from src.agent.agent_loop import run_agent_loop
 from src.agent import config
+from src.agent import db
 
 
 class DummyChunk:
@@ -158,6 +159,66 @@ def test_max_tool_calls_abort(monkeypatch):
     # Verify conversation history was cleanly reverted to initial state
     assert len(ctx["conversation_history"]) == 2
     assert ctx["conversation_history"] == initial_history
+
+
+def test_max_tool_calls_abort_sqlite_rollback(tmp_path, monkeypatch):
+    """Test that aborting rolls back persisted SQLite messages from the current turn."""
+    test_db = str(tmp_path / "test_abort_db.db")
+    monkeypatch.setattr(db, "DB_PATH", test_db)
+    monkeypatch.setattr(config, "MAX_TOOL_CALLS", 1)
+    monkeypatch.setattr(config, "MAX_RETRIES", 1)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    db.init_db()
+    sid = db.create_session("Abort Rollback Test")
+    db.save_message(sid, "user", "Initial user query")
+
+    initial_history = [
+        {"role": "system", "content": "System prompt"},
+        {"role": "user", "content": "Initial user query"}
+    ]
+    ctx = {
+        "session_id": sid,
+        "conversation_history": list(initial_history),
+        "SYSTEM_PROMPT": "System prompt"
+    }
+
+    tool_call_delta_1 = MagicMock()
+    tool_call_delta_1.index = 0
+    tool_call_delta_1.id = "call_abort_1"
+    tool_call_delta_1.function = MagicMock()
+    tool_call_delta_1.function.name = "list_directory"
+    tool_call_delta_1.function.arguments = "{}"
+
+    tool_call_delta_2 = MagicMock()
+    tool_call_delta_2.index = 0
+    tool_call_delta_2.id = "call_abort_2"
+    tool_call_delta_2.function = MagicMock()
+    tool_call_delta_2.function.name = "list_directory"
+    tool_call_delta_2.function.arguments = "{}"
+
+    stream_1 = [DummyChunk(content=None, tool_calls=[tool_call_delta_1])]
+    stream_2 = [DummyChunk(content=None, tool_calls=[tool_call_delta_2])]
+
+    mock_client = MagicMock()
+    mock_client.chat.send.side_effect = [iter(stream_1), iter(stream_2)]
+
+    with patch("src.agent.agent_loop.OpenRouter") as MockOpenRouter, \
+         patch("src.agent.agent_loop.dispatch_tool", return_value="dir listing result"), \
+         patch("builtins.input", return_value="a"), \
+         patch("sys.stdin.isatty", return_value=True):
+
+        MockOpenRouter.return_value.__enter__.return_value = mock_client
+        run_agent_loop(ctx)
+
+    # 1. In-memory history reverted
+    assert ctx["conversation_history"] == initial_history
+
+    # 2. SQLite records for the aborted turn were completely rolled back
+    loaded = db.load_messages(sid)
+    assert len(loaded) == 1
+    assert loaded[0]["role"] == "user"
+    assert loaded[0]["content"] == "Initial user query"
 
 
 def test_max_tool_calls_non_interactive(monkeypatch):
