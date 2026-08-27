@@ -14,7 +14,7 @@ from . import session
 from . import skills_loader
 from . import mention_utils
 from .memory import compact_memory
-from .ui import get_user_input, print_banner
+from .ui import get_user_input, print_banner, print_recent_messages_preview
 from .slash_commands import handle_slash_command
 from .agent_loop import run_agent_loop
 from .usage_tracker import UsageTracker
@@ -40,6 +40,11 @@ def main():
         print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
 
     print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
+
+    # Render recent message preview if resuming an existing session with history
+    recent_msgs = db.get_recent_messages(current_session_id, limit=3)
+    if recent_msgs:
+        print_recent_messages_preview(recent_msgs, session_id=current_session_id)
 
     # --- Main Conversation Loop ---
 

@@ -24,6 +24,7 @@ from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.styles import Style
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.key_binding import KeyBindings
 from . import config
 
 
@@ -140,21 +141,39 @@ SlashCompleter = PromptCompleter
 
 class Spinner:
     """
-    Threaded terminal progress spinner with rotating moon phase indicators.
+    Threaded terminal progress spinner with rotating moon phase indicators,
+    live elapsed timer, and dynamic status updates.
     """
 
-    def __init__(self, message="Loading"):
+    def __init__(self, message="Loading", show_timer=False, auto_status=False):
         """
         Initializes the spinner instance.
 
         Args:
             message (str, optional): Loading text label. Defaults to "Loading".
+            show_timer (bool, optional): Whether to display elapsed seconds. Defaults to False.
+            auto_status (bool, optional): Whether to auto-update status message on long delays. Defaults to False.
         """
         self.message = message
+        self.show_timer = show_timer
+        self.auto_status = auto_status
+        self.start_time = time.time()
+        self.diagnostic_tag = ""
+        self.lock = threading.Lock()
         # Moon phases sequence rotating clockwise
         self.spinner_chars = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
         self.stop_event = threading.Event()
         self.thread = None
+
+    def update_message(self, new_message: str):
+        """Thread-safe update for the spinner status message."""
+        with self.lock:
+            self.message = new_message
+
+    def set_diagnostic_tag(self, tag: str):
+        """Thread-safe update for an extra diagnostic badge/tag."""
+        with self.lock:
+            self.diagnostic_tag = tag
 
     def _spin(self):
         """Internal animation loop executing in background thread."""
@@ -165,6 +184,7 @@ class Spinner:
         # ANSI Colors for Esc prompt
         RED = "\033[1;31m"
         GRAY = "\033[38;5;244m"
+        YELLOW = "\033[1;33m"
         RESET = "\033[0m"
         esc_hint = f" {GRAY}({RED}Press [Esc] to cancel{GRAY}){RESET}"
 
@@ -189,10 +209,24 @@ class Spinner:
                 except Exception:
                     pass
 
+            elapsed = int(time.time() - self.start_time)
+            with self.lock:
+                current_msg = self.message
+                diag_tag = self.diagnostic_tag
+
+            if self.auto_status:
+                if elapsed >= 25:
+                    current_msg = f"{YELLOW}Upstream model is taking longer than usual{RESET}"
+                elif elapsed >= 10:
+                    current_msg = "Waiting for model response"
+
+            timer_str = f" {GRAY}({elapsed}s){RESET}" if (self.show_timer and elapsed >= 1) else ""
+            tag_str = f" {diag_tag}" if diag_tag else ""
+
             char = self.spinner_chars[idx % len(self.spinner_chars)]
             frame = frames[idx % len(frames)]
             pad = " " * (max_len - len(frame))
-            sys.stdout.write(f"\r  [{char}] {self.message}{frame}{pad}{esc_hint} ")
+            sys.stdout.write(f"\r  [{char}] {current_msg}{timer_str}{tag_str}{frame}{pad}{esc_hint} ")
             sys.stdout.flush()
             idx += 1
             self.stop_event.wait(0.25)
@@ -207,6 +241,7 @@ class Spinner:
     def start(self):
         """Starts the spinner animation in a background thread."""
         self.stop_event.clear()
+        self.start_time = time.time()
         self.thread = threading.Thread(target=self._spin, daemon=True)
         self.thread.start()
 
@@ -613,6 +648,45 @@ custom_style = Style.from_dict({
 _prompt_session = None
 
 
+def create_prompt_keybindings():
+    """
+    Creates keybindings for PromptSession:
+    - Tab: Accepts autosuggestion (ghost text) if available, or navigates/applies completion.
+    - Shift+Tab: Navigates to previous completion item.
+    - Right Arrow: Accepts autosuggestion when at end of input.
+    """
+    kb = KeyBindings()
+
+    @kb.add('tab')
+    def _handle_tab(event):
+        b = event.current_buffer
+        if b.complete_state:
+            b.complete_next()
+        elif b.suggestion:
+            b.insert_text(b.suggestion.text)
+        else:
+            b.start_completion(select_first=True)
+
+    @kb.add('s-tab')
+    def _handle_shift_tab(event):
+        b = event.current_buffer
+        if b.complete_state:
+            b.complete_previous()
+
+    @kb.add('right')
+    def _handle_right(event):
+        b = event.current_buffer
+        if b.cursor_position == len(b.text) and b.suggestion:
+            b.insert_text(b.suggestion.text)
+        else:
+            b.cursor_right()
+
+    return kb
+
+
+_prompt_keybindings = create_prompt_keybindings()
+
+
 def get_prompt_session():
     """
     Lazily instantiates PromptSession to prevent NoConsoleScreenBufferError
@@ -621,10 +695,21 @@ def get_prompt_session():
     global _prompt_session
     if _prompt_session is None:
         try:
-            _prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory())
+            _prompt_session = PromptSession(
+                style=custom_style,
+                auto_suggest=AutoSuggestFromHistory(),
+                key_bindings=_prompt_keybindings,
+                complete_while_typing=True
+            )
         except Exception:
             from prompt_toolkit.output import DummyOutput
-            _prompt_session = PromptSession(style=custom_style, auto_suggest=AutoSuggestFromHistory(), output=DummyOutput())
+            _prompt_session = PromptSession(
+                style=custom_style,
+                auto_suggest=AutoSuggestFromHistory(),
+                key_bindings=_prompt_keybindings,
+                complete_while_typing=True,
+                output=DummyOutput()
+            )
     return _prompt_session
 
 
@@ -639,7 +724,13 @@ def get_user_input(skills):
     Returns:
         str: The typed string, or "/exit" on Ctrl+D.
     """
-    words = ['/help', '/sessions', '/new', '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit', '/search', '/model', '/readonly', '/diff', '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd', '/init-ai', '/max_tool_calls', '/usage']
+    words = [
+        '/help', '/sessions', '/new', '/rename',
+        '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit',
+        '/search', '/model', '/readonly', '/diff', '/enter2confirm',
+        '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd',
+        '/init-ai', '/max_tool_calls', '/usage'
+    ]
     for s in skills:
         words.append(f"/{s['name']}")
     completer = PromptCompleter(words)
@@ -875,3 +966,62 @@ def print_agent_response(content: str, duration: float, usage_info: str = ""):
 
     console.print(panel)
     console.print()
+
+
+def print_recent_messages_preview(messages: list[dict], session_id=None, session_title=None):
+    """
+    Renders a compact, beautifully styled preview box of recent messages in the session.
+
+    Args:
+        messages (list[dict]): List of recent message dicts ({'role': 'user'|'assistant', 'content': str}).
+        session_id (int, optional): Session database ID.
+        session_title (str, optional): Session title string.
+    """
+    if not messages:
+        return
+
+    GREEN = "\033[1;32m"
+    GOLD = "\033[38;5;220m"
+    GRAY = "\033[38;5;244m"
+    DARK_GRAY = "\033[38;5;238m"
+    RESET = "\033[0m"
+
+    title_part = f"Session [{session_id}]" if session_id else "Recent Conversation"
+    if session_title:
+        title_part += f" '{session_title}'"
+
+    try:
+        term_width = os.get_terminal_size().columns
+    except (ValueError, OSError):
+        term_width = 80
+    term_width = min(max(term_width, 60), 100)
+
+    header_text = f" 💬 Recent Messages in {title_part} "
+    dash_count = max(4, term_width - len(header_text) - 4)
+    top_border = f"{DARK_GRAY}┌─{GOLD}{header_text}{DARK_GRAY}{'─' * dash_count}┐{RESET}"
+    bottom_border = f"{DARK_GRAY}└{'─' * (term_width - 2)}┘{RESET}"
+
+    print(top_border)
+    for m in messages:
+        role = m.get("role", "").lower()
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+
+        first_line = content.splitlines()[0].strip()
+        max_content_len = term_width - 18
+        if len(first_line) > max_content_len:
+            first_line = first_line[:max_content_len - 3] + "..."
+        elif len(content.splitlines()) > 1 and len(first_line) < max_content_len - 5:
+            first_line += " ..."
+
+        if role == "user":
+            role_badge = f"{GREEN}🧑 You:{RESET}"
+        elif role == "assistant":
+            role_badge = f"{GOLD}🌒 Losna:{RESET}"
+        else:
+            role_badge = f"{GRAY}[{role.title()}]:{RESET}"
+
+        print(f"{DARK_GRAY}│{RESET}  {role_badge} {first_line}")
+    print(bottom_border)
+    print()

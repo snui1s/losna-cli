@@ -111,6 +111,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 |---|---|
 | `/help` | Show all available commands and loaded skills |
 | `/new <title>` | Start a new chat session with a custom title |
+| `/rename [id] <title>` | Rename the current or specified chat session |
 | `/sessions` | List all saved chat sessions with their IDs |
 | `/switch <id>` | Switch to a different chat session by ID |
 | `/delete_session <id>` | Delete an existing chat session by ID |

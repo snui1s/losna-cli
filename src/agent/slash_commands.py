@@ -17,11 +17,12 @@ from . import plugin_manager
 from . import diff_utils
 from . import export_utils
 from . import mention_utils
-from .ui import print_banner, print_session_header
+from .ui import print_banner, print_session_header, print_recent_messages_preview
 
 # Set of all built-in slash commands (used to detect unknown commands vs skill commands)
 RESERVED_COMMANDS = {
     '/help', '/sessions', '/new', '/switch', '/delete_session', '/history',
+    '/rename',
     '/exit', '/quit', '/search', '/model', '/plugin', '/readonly', '/diff',
     '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear',
     '/ls', 'ls', '/cd', 'cd', '/init-ai', '/init_ai', '/initai',
@@ -87,6 +88,8 @@ def handle_slash_command(user_input, ctx):
         return _cmd_clear(ctx)
     if command == "/new":
         return _cmd_new(user_input, ctx)
+    if command == "/rename":
+        return _cmd_rename(user_input, ctx)
     if command == "/switch":
         return _cmd_switch(user_input, ctx)
     if command == "/delete_session":
@@ -133,6 +136,7 @@ def _cmd_help(ctx):
     print("  /help          - Show this help menu with all available commands")
     print("  /sessions      - List all chat sessions (tabs) and see their IDs")
     print("  /new <title>   - Start a new chat session (e.g. '/new Web Development')")
+    print("  /rename [id] <title> - Rename current or specified chat session (e.g. '/rename Bug Fix')")
     print("  /switch <id>   - Switch to an existing chat session by its ID (e.g. '/switch 3')")
     print("  /delete_session <id> - Delete an existing chat session by its ID")
     print("  /history [id]  - View the chat logs and tool call history for a session (defaults to current)")
@@ -177,9 +181,33 @@ def _cmd_help(ctx):
 
 def _cmd_sessions(ctx):
     current_session_id = ctx["session_id"]
-    for s in db.list_sessions():
-        marker = " (current)" if s["id"] == current_session_id else ""
-        print(f"  [{s['id']}] {s['title']}  (last updated: {s['updated_at']}){marker}")
+    GREEN = "\033[1;32m"
+    GOLD = "\033[38;5;220m"
+    CYAN = "\033[1;36m"
+    GRAY = "\033[38;5;244m"
+    DARK_GRAY = "\033[38;5;238m"
+    RESET = "\033[0m"
+
+    print(f"\n{CYAN}=== Available Chat Sessions ==={RESET}")
+    for s in db.list_sessions_with_preview():
+        marker = f" {GREEN}(current){RESET}" if s["id"] == current_session_id else ""
+        msg_count_str = f"{s.get('msg_count', 0)} msgs"
+        updated_str = s['updated_at'].split('.')[0].replace('T', ' ') if 'T' in str(s['updated_at']) else s['updated_at']
+        print(f"  {GOLD}[{s['id']}]{RESET} {s['title']}  {GRAY}({updated_str}, {msg_count_str}){RESET}{marker}")
+
+        last_msg = s.get("last_message")
+        if last_msg:
+            role = last_msg.get("role", "").lower()
+            content = (last_msg.get("content") or "").strip().splitlines()[0]
+            if len(content) > 75:
+                content = content[:72] + "..."
+            if role == "user":
+                badge = f"{GREEN}🧑 You:{RESET}"
+            elif role == "assistant":
+                badge = f"{GOLD}🌒 Losna:{RESET}"
+            else:
+                badge = f"{GRAY}[{role}]:{RESET}"
+            print(f"      {DARK_GRAY}└─{RESET} {badge} {GRAY}\"{content}\"{RESET}")
     print()
     return True
 
@@ -193,11 +221,80 @@ def _cmd_new(user_input, ctx):
     return True
 
 
+def _cmd_rename(user_input, ctx):
+    GREEN = "\033[1;32m"
+    RED = "\033[1;31m"
+    CYAN = "\033[1;36m"
+    GRAY = "\033[38;5;244m"
+    RESET = "\033[0m"
+
+    parts = user_input.strip().split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    target_sid = ctx["session_id"]
+    new_title = ""
+
+    if arg:
+        tokens = arg.split(maxsplit=1)
+        if tokens[0].isdigit() and db.session_exists(int(tokens[0])) and len(tokens) > 1:
+            target_sid = int(tokens[0])
+            new_title = tokens[1].strip()
+        else:
+            new_title = arg
+    else:
+        try:
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.key_binding import KeyBindings
+            from prompt_toolkit.formatted_text import HTML
+
+            kb = KeyBindings()
+
+            @kb.add('escape')
+            def _(event):
+                event.app.exit(result=None)
+
+            try:
+                ps = PromptSession(key_bindings=kb)
+            except Exception:
+                from prompt_toolkit.output import DummyOutput
+                ps = PromptSession(key_bindings=kb, output=DummyOutput())
+
+            prompt_html = HTML(f'<ansicyan>Enter new title for session [{target_sid}]</ansicyan> <ansigray>(Press [Esc] to cancel)</ansigray>: ')
+            res = ps.prompt(prompt_html)
+            if res is None:
+                print(f"  {GRAY}[System]: Rename canceled.{RESET}\n")
+                return True
+            new_title = res.strip()
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n  {GRAY}[System]: Rename canceled.{RESET}\n")
+            return True
+        except Exception:
+            try:
+                new_title = input(f"Enter new title for session [{target_sid}]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print(f"\n  {GRAY}[System]: Rename canceled.{RESET}\n")
+                return True
+
+    if not new_title:
+        print(f"  {GRAY}[System]: Rename canceled (empty title).{RESET}\n")
+        return True
+
+    success = db.rename_session(target_sid, new_title)
+    if success:
+        print(f"  {GREEN}✔{RESET} Renamed session {CYAN}[{target_sid}]{RESET} to {GREEN}'{new_title}'{RESET}\n")
+    else:
+        print(f"  {RED}[Error]: Failed to rename session [{target_sid}].{RESET}\n")
+    return True
+
+
 def _cmd_switch(user_input, ctx):
     target = user_input[7:].strip()
     if target.isdigit() and db.session_exists(int(target)):
         _load_session(int(target), ctx)
         print(f"Switched to session [{ctx['session_id']}] with {len(ctx['conversation_history'])} message(s)\n")
+        recent_msgs = db.get_recent_messages(ctx['session_id'], limit=3)
+        if recent_msgs:
+            print_recent_messages_preview(recent_msgs, session_id=ctx['session_id'])
     else:
         if not target:
             print("Usage: /switch <session_id>  (e.g. '/switch 3'). Use '/sessions' to see available chats.\n")

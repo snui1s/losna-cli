@@ -57,6 +57,41 @@ class TestSlashCommands:
         assert db.session_exists(999999) is False
         db.delete_session(sid)
 
+    # --- /rename Command ---
+    def test_rename_session(self):
+        from src.agent.slash_commands import handle_slash_command
+        sid = db.create_session("Old Title")
+        assert db.session_exists(sid) is True
+
+        ctx = {
+            "session_id": sid,
+            "conversation_history": [],
+            "SYSTEM_PROMPT": "Prompt",
+            "skills": []
+        }
+
+        try:
+            # Test renaming current session
+            handle_slash_command("/rename Brand New Title", ctx)
+            sessions = db.list_sessions()
+            meta = next(s for s in sessions if s["id"] == sid)
+            assert meta["title"] == "Brand New Title"
+
+            # Test renaming with explicit ID
+            handle_slash_command(f"/rename {sid} Explicit ID Title", ctx)
+            sessions = db.list_sessions()
+            meta = next(s for s in sessions if s["id"] == sid)
+            assert meta["title"] == "Explicit ID Title"
+
+            # Test interactive cancellation (Esc pressed -> prompt returns None)
+            with patch("prompt_toolkit.PromptSession.prompt", return_value=None):
+                handle_slash_command("/rename", ctx)
+                sessions = db.list_sessions()
+                meta = next(s for s in sessions if s["id"] == sid)
+                assert meta["title"] == "Explicit ID Title"
+        finally:
+            db.delete_session(sid)
+
     # --- 5. /delete_session <id> Command ---
     def test_delete_session_cascade(self):
         sid = db.create_session("ToDelete")
@@ -161,16 +196,47 @@ class TestSlashCommands:
 
     # --- 14. PromptCompleter (/ and @ Autocomplete) ---
     def test_prompt_completer_suggestions(self):
-        words = ['/help', '/sessions', '/new', '/switch', '/readonly', '/diff', '/pin', '/export', '/clear']
+        words = ['/help', '/sessions', '/new', '/rename', '/switch', '/readonly', '/diff', '/pin', '/export', '/clear']
         completer = ui.PromptCompleter(words)
 
         doc = MagicMock()
-        doc.text_before_cursor = "/sw"
-        doc.get_word_before_cursor.return_value = "/sw"
+        doc.text_before_cursor = "/ren"
+        doc.get_word_before_cursor.return_value = "/ren"
 
         completions = list(completer.get_completions(doc, None))
         completion_texts = [c.text for c in completions]
+        assert "/rename" in completion_texts
+
+        doc.text_before_cursor = "/sw"
+        doc.get_word_before_cursor.return_value = "/sw"
+        completions = list(completer.get_completions(doc, None))
+        completion_texts = [c.text for c in completions]
         assert "/switch" in completion_texts
+
+    def test_tab_keybinding_autosuggestion(self):
+        kb = ui.create_prompt_keybindings()
+        tab_binding = next(b for b in kb.bindings if b.handler.__name__ == "_handle_tab")
+        tab_handler = tab_binding.handler
+
+        # Test case 1: Autosuggestion is available -> Tab accepts it
+        mock_event = MagicMock()
+        mock_buffer = MagicMock()
+        mock_buffer.complete_state = None
+        mock_buffer.suggestion = MagicMock()
+        mock_buffer.suggestion.text = " rename test"
+        mock_event.current_buffer = mock_buffer
+
+        tab_handler(mock_event)
+        mock_buffer.insert_text.assert_called_once_with(" rename test")
+
+        # Test case 2: Completion menu is open -> Tab cycles completion
+        mock_buffer_comp = MagicMock()
+        mock_buffer_comp.complete_state = MagicMock()
+        mock_event_comp = MagicMock()
+        mock_event_comp.current_buffer = mock_buffer_comp
+
+        tab_handler(mock_event_comp)
+        mock_buffer_comp.complete_next.assert_called_once()
 
     # --- 15. /clear Command ---
     def test_clear_command_autocomplete(self):
