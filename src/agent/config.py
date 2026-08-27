@@ -83,7 +83,6 @@ ENTER_2_CONFIRM = global_config.get("ENTER_2_CONFIRM", False)
 def set_read_only_mode(enabled: bool):
     """
     Toggles the Read-Only Mode setting and persists to ~/.losnarc.
-
     Args:
         enabled (bool): True to enable Read-Only Mode, False to disable.
     """

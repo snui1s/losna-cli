@@ -5,15 +5,18 @@ Handles the core AI conversation loop: streaming responses, accumulating tool ca
 executing tools with confirmation dialogs, and persisting results to SQLite.
 """
 
+import os
 import sys
 import time
 import json
+import threading
 from openrouter import OpenRouter
 from . import config
 from . import db
 from . import diff_utils
 from .tools import dispatch_tool, get_available_tools
 from .ui import Spinner, StreamBorderRenderer
+from .diagnostics import check_openrouter_health, format_diagnostic_summary
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -80,6 +83,8 @@ def run_agent_loop(ctx):
 
     attempt = 0
     tool_call_count = 0
+    effective_max_tools = config.MAX_TOOL_CALLS
+    force_synthesis = False
     loop_iteration = 0
     loop_start_time = time.time()
 
@@ -101,7 +106,7 @@ def run_agent_loop(ctx):
             agent_start_time = time.time()
 
             with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
-                spinner = Spinner("Reflecting")
+                spinner = Spinner("Reflecting", show_timer=True, auto_status=True)
                 spinner.start()
 
                 full_content = ""
@@ -109,6 +114,30 @@ def run_agent_loop(ctx):
                 first_token_received = False
                 last_usage = None
                 renderer = StreamBorderRenderer()
+
+                # Background health watcher: check OpenRouter connectivity if TTFT exceeds 20 seconds
+                health_stop_evt = threading.Event()
+
+                def _bg_health_watcher():
+                    if not health_stop_evt.wait(20.0):
+                        if not first_token_received and not spinner.stop_event.is_set():
+                            diag = check_openrouter_health(config.OPENROUTER_API_KEY, timeout=3.5)
+                            if not first_token_received and not spinner.stop_event.is_set():
+                                status = diag.get("status")
+                                if status == "OK":
+                                    latency = diag.get("latency_ms", 0)
+                                    spinner.set_diagnostic_tag(f"\033[1;32m[OpenRouter OK ({latency}ms)]\033[0m")
+                                elif status == "AUTH_ERROR":
+                                    spinner.set_diagnostic_tag("\033[1;31m[OpenRouter Auth Error]\033[0m")
+                                elif status == "RATE_LIMITED":
+                                    spinner.set_diagnostic_tag("\033[1;33m[OpenRouter Rate Limited]\033[0m")
+                                elif status == "GATEWAY_ERROR":
+                                    spinner.set_diagnostic_tag("\033[1;31m[OpenRouter Gateway 5xx]\033[0m")
+                                else:
+                                    spinner.set_diagnostic_tag("\033[1;31m[OpenRouter Unreachable]\033[0m")
+
+                health_thread = threading.Thread(target=_bg_health_watcher, daemon=True)
+                health_thread.start()
 
                 try:
                     import re
@@ -126,7 +155,15 @@ def run_agent_loop(ctx):
                                 "content": sys_content + "\n\n[STRICT THAI LANGUAGE ENFORCEMENT: The user is writing in Thai (ภาษาไทย). You MUST answer 100% in natural Thai. Absolutely NEVER output any Chinese characters (中文 / 汉字) or other foreign languages.]"
                             }
 
-                    active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
+                    if force_synthesis:
+                        payload_messages.append({
+                            "role": "system",
+                            "content": "[System Note]: Tool call limit reached. Please provide a direct, comprehensive final answer based on the findings and tool outputs gathered above without making any further tool calls."
+                        })
+                        active_tools = None
+                    else:
+                        active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
+
                     stream_gen = client.chat.send(
                         model=config.MODEL_NAME,
                         messages=payload_messages,
@@ -152,6 +189,7 @@ def run_agent_loop(ctx):
                         c_delta = getattr(delta, "content", None)
                         if c_delta:
                             if not first_token_received:
+                                health_stop_evt.set()
                                 spinner.stop()
                                 first_token_received = True
                             renderer.on_token(c_delta)
@@ -160,6 +198,10 @@ def run_agent_loop(ctx):
                         # Tool calls delta
                         tc_deltas = getattr(delta, "tool_calls", None)
                         if tc_deltas:
+                            if not first_token_received:
+                                health_stop_evt.set()
+                                spinner.stop()
+                                first_token_received = True
                             for tc in tc_deltas:
                                 idx = getattr(tc, "index", 0)
                                 if idx not in tool_calls_acc:
@@ -176,6 +218,7 @@ def run_agent_loop(ctx):
                                         tool_calls_acc[idx]["function"]["arguments"] += func.arguments
 
                 finally:
+                    health_stop_evt.set()
                     spinner.stop()
 
                 agent_end_time = time.time()
@@ -202,10 +245,64 @@ def run_agent_loop(ctx):
                     if first_token_received:
                         renderer.finish_intermediate()
 
-                    if tool_call_count >= config.MAX_TOOL_CALLS:
-                        print("  \033[1;31m[System]: Too many tool calls. Forcing stop to prevent infinite loop.\033[0m")
-                        ctx["conversation_history"] = list(safe_history_backup)
-                        break
+                    if (tool_call_count + len(message.tool_calls) > effective_max_tools) or (tool_call_count >= effective_max_tools):
+                        YELLOW = "\033[1;33m"
+                        GREEN = "\033[1;32m"
+                        CYAN = "\033[1;36m"
+                        RED = "\033[1;31m"
+                        RESET = "\033[0m"
+
+                        is_interactive = sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST")
+                        choice = "c"
+
+                        if is_interactive:
+                            total_requested = tool_call_count + len(message.tool_calls)
+                            print(f"\n{YELLOW}[!] Tool Call Limit Reached ({total_requested}/{effective_max_tools} calls in this turn){RESET}")
+                            print(f"  {GREEN}[c] Continue{RESET}  - Grant +{config.MAX_TOOL_CALLS} more tool calls and continue")
+                            print(f"  {CYAN}[s] Summarize{RESET} - Stop calling tools and synthesize answer from data gathered so far")
+                            print(f"  {RED}[a] Abort{RESET}     - Cancel and revert this turn")
+                            try:
+                                user_choice = input(f"Select option ({GREEN}c{RESET}/{CYAN}s{RESET}/{RED}a{RESET}, default: {GREEN}c{RESET}): ").strip().lower()
+                                if user_choice:
+                                    choice = user_choice
+                            except (EOFError, KeyboardInterrupt):
+                                choice = "a"
+                        else:
+                            choice = "s"
+
+                        if choice in ("c", "continue", "y", "yes"):
+                            effective_max_tools += max(config.MAX_TOOL_CALLS, len(message.tool_calls))
+                            print(f"  {GREEN}✔ Extended tool limit to {effective_max_tools} calls for this turn.{RESET}\n")
+                        elif choice in ("s", "summarize", "stop", "answer"):
+                            print(f"  {CYAN}ℹ Synthesizing final response from gathered results...{RESET}\n")
+                            force_synthesis = True
+                            assistant_msg = message.model_dump(exclude_none=True)
+                            conversation_history.append(assistant_msg)
+                            tc_json = json.dumps(assistant_msg.get("tool_calls", []), ensure_ascii=False)
+                            db.save_message(
+                                current_session_id, "assistant",
+                                assistant_msg.get("content") or "",
+                                tool_calls_json=tc_json
+                            )
+                            for tc in message.tool_calls:
+                                note = "Tool execution stopped by user. Please synthesize the final response based on all data gathered so far."
+                                conversation_history.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
+                                    "name": tc.function.name,
+                                    "content": note
+                                })
+                                db.save_message(
+                                    current_session_id, "tool",
+                                    note,
+                                    tool_call_id=tc.id,
+                                    tool_name=tc.function.name
+                                )
+                            continue
+                        else:
+                            print(f"  {RED}[System]: Operation aborted by user. Reverting to previous state.{RESET}\n")
+                            ctx["conversation_history"] = list(safe_history_backup)
+                            break
 
                     # Colored output for system decisions
                     GREEN = "\033[1;32m"
@@ -324,6 +421,14 @@ def run_agent_loop(ctx):
         except Exception as e:
             attempt += 1
             print(f"  [Error]: {e}")
+
+            # Run diagnostic check to give actionable insights to the user
+            try:
+                diag = check_openrouter_health(config.OPENROUTER_API_KEY, timeout=3.5)
+                diag_summary = format_diagnostic_summary(diag, config.MODEL_NAME)
+                print(diag_summary)
+            except Exception:
+                pass
 
             # Rollback to safe state on errors
             ctx["conversation_history"] = list(safe_history_backup)

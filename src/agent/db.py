@@ -220,6 +220,28 @@ def delete_session(session_id):
         conn.close()
 
 
+def rename_session(session_id: int, new_title: str) -> bool:
+    """Update a session's title."""
+    if not new_title or not new_title.strip():
+        return False
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+            (new_title.strip(), datetime.now().isoformat(), session_id)
+        )
+        rowcount = cur.rowcount
+        conn.commit()
+        return rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 # --- Message management ---
 
 def save_message(session_id, role, content, tool_call_id=None, tool_name=None, tool_calls_json=None):
@@ -274,6 +296,59 @@ def load_messages(session_id, skip=0):
                     pass
             messages.append(msg)
         return messages
+    finally:
+        conn.close()
+
+
+def get_last_session_message(session_id):
+    """Fetch the most recent user or assistant message for a session."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT role, content FROM messages WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY id DESC LIMIT 1",
+            (session_id,)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_recent_messages(session_id, limit=3):
+    """Fetch the last N user and assistant messages for a session in chronological order."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT role, content, timestamp FROM messages
+               WHERE session_id = ? AND role IN ('user', 'assistant')
+               ORDER BY id DESC LIMIT ?""",
+            (session_id, limit)
+        )
+        rows = cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+    finally:
+        conn.close()
+
+
+def list_sessions_with_preview():
+    """Return all sessions enriched with message count and latest message preview."""
+    sessions = list_sessions()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        for s in sessions:
+            sid = s["id"]
+            cur.execute("SELECT COUNT(*) as cnt FROM messages WHERE session_id = ?", (sid,))
+            s["msg_count"] = cur.fetchone()["cnt"]
+            cur.execute(
+                "SELECT role, content FROM messages WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY id DESC LIMIT 1",
+                (sid,)
+            )
+            last_row = cur.fetchone()
+            s["last_message"] = dict(last_row) if last_row else None
+        return sessions
     finally:
         conn.close()
 
