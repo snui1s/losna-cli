@@ -1,0 +1,65 @@
+[
+  {
+    "id": "tool_search_web_1",
+    "category": "web_search",
+    "input": "ค้นหาข้อมูลเกี่ยวกับ Release Notes ล่าสุดของ Python 3.13 บนเน็ตให้หน่อย",
+    "expected_tool": "web_search",
+    "expected_args_keys": ["query"]
+  },
+  {
+    "id": "tool_read_web_page_1",
+    "category": "web_page",
+    "input": "ช่วยสรุปเนื้อหาจากบทความนี้ให้หน่อย https://fastapi.tiangolo.com/tutorial/first-steps/",
+    "expected_tool": "read_web_page",
+    "expected_args_keys": ["url"]
+  },
+  {
+    "id": "tool_list_dir_1",
+    "category": "file_system",
+    "input": "ดูรายชื่อไฟล์และโฟลเดอร์ในโปรเจกต์นี้ให้หน่อย",
+    "expected_tool": "list_directory",
+    "expected_args_keys": ["folder_path"]
+  },
+  {
+    "id": "tool_read_file_1",
+    "category": "file_system",
+    "input": "เปิดอ่านโค้ดในไฟล์ src/agent/config.py ให้ดูหน่อย",
+    "expected_tool": "read_local_file",
+    "expected_args_keys": ["filepath"]
+  },
+  {
+    "id": "tool_search_files_1",
+    "category": "file_search",
+    "input": "หาว่าในโปรเจกต์นี้มีการเรียกใช้ฟังก์ชัน get_current_time อยู่ในไฟล์ไหนบ้าง",
+    "expected_tool": "search_in_files",
+    "expected_args_keys": ["keyword"]
+  },
+  {
+    "id": "tool_get_time_1",
+    "category": "utility",
+    "input": "ตอนนี้เวลาเท่าไหร่แล้วครับ",
+    "expected_tool": "get_current_time",
+    "expected_args_keys": []
+  },
+  {
+    "id": "tool_stock_price_1",
+    "category": "utility",
+    "input": "เช็คราคาหุ้น AAPL ตอนนี้ให้หน่อย",
+    "expected_tool": "get_stock_price",
+    "expected_args_keys": ["ticker"]
+  },
+  {
+    "id": "tool_view_file_lines_1",
+    "category": "file_system",
+    "input": "ขอดูโค้ดไฟล์ README.md บรรทัดที่ 1 ถึง 50 หน่อย",
+    "expected_tool": "view_file_lines",
+    "expected_args_keys": ["filepath", "start_line", "end_line"]
+  },
+  {
+    "id": "tool_direct_answer_1",
+    "category": "direct_answer",
+    "input": "Python GIL คืออะไร อธิบายสั้นๆ 3 บรรทัด",
+    "expected_tool": null,
+    "expected_args_keys": []
+  }
+]

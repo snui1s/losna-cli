@@ -1,0 +1,45 @@
+[
+  {
+    "id": "sec_sqli_1",
+    "title": "SQL Injection in User Login Handler",
+    "language": "python",
+    "code_snippet": "def login(user_id, password, db_cursor):\n    query = f\"SELECT * FROM users WHERE username = '{user_id}' AND password = '{password}'\"\n    return db_cursor.execute(query).fetchall()",
+    "expected_vulnerabilities": [
+      "SQL Injection (CWE-89)",
+      "Unsanitized user input formatted directly into SQL query string",
+      "Plaintext password comparison (CWE-256 / CWE-522)"
+    ],
+    "expected_remediations": [
+      "Parameterized query / Prepared statements (e.g. cursor.execute('SELECT ... WHERE username = %s', (user_id,)))",
+      "Password hashing (e.g. bcrypt, argon2)"
+    ]
+  },
+  {
+    "id": "sec_command_injection_1",
+    "title": "OS Command Injection in Ping Service",
+    "language": "python",
+    "code_snippet": "import subprocess\n\ndef ping_host(host_ip):\n    cmd = f\"ping -c 4 {host_ip}\"\n    return subprocess.check_output(cmd, shell=True).decode()",
+    "expected_vulnerabilities": [
+      "OS Command Injection (CWE-78)",
+      "Use of shell=True with unvalidated/unescaped string formatting"
+    ],
+    "expected_remediations": [
+      "Pass arguments as a list with shell=False (e.g. subprocess.check_output(['ping', '-c', '4', host_ip], shell=False))",
+      "Validate IP / hostname format with regex or ipaddress library"
+    ]
+  },
+  {
+    "id": "sec_path_traversal_1",
+    "title": "Path Traversal in File Download Endpoint",
+    "language": "python",
+    "code_snippet": "import os\n\ndef get_file_content(filename):\n    filepath = os.path.join('/var/www/uploads', filename)\n    with open(filepath, 'r') as f:\n        return f.read()",
+    "expected_vulnerabilities": [
+      "Path Traversal / Directory Traversal (CWE-22)",
+      "User could supply '../../etc/passwd' to break out of '/var/www/uploads'"
+    ],
+    "expected_remediations": [
+      "Use os.path.realpath / Path.resolve() and verify path starts with base directory",
+      "Sanitize filename using werkzeug.utils.secure_filename or whitelist"
+    ]
+  }
+]
