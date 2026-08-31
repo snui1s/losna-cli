@@ -24,18 +24,22 @@
 ## Key Features
 
 ### Deep Analysis & BYOK (Bring Your Own Key)
-- **Bring Your Own Key (BYOK)** — Connect directly to OpenRouter & Tavily. Zero token markup, no middleman limits, and total freedom to choose any model (*DeepSeek V4, Claude 3.5, Gemini 2.5, GPT-4o*).
+
+- **Bring Your Own Key (BYOK)** — Connect directly to OpenRouter & Tavily. Zero token markup, no middleman limits, and total freedom to choose any model (_DeepSeek V4, Claude 3.5, Gemini 2.5, GPT-4o_).
 - **Deep Q&A & Security Auditing** — Built to read large code blocks, analyze architecture, and find security vulnerabilities or logic flaws without truncating long explanations.
 
 ### Read-Only Mode (`/readonly`)
-- **Strict Safety Toggle** — Lock the agent into Read-Only mode with `/readonly`. Modifying tools (*file writing, editing, replacing, deleting*) and shell command execution are blocked at both schema and runtime levels — safe for auditing production code.
+
+- **Strict Safety Toggle** — Lock the agent into Read-Only mode with `/readonly`. Modifying tools (_file writing, editing, replacing, deleting_) and shell command execution are blocked at both schema and runtime levels — safe for auditing production code.
 - **Interactive Command Interception** — Destructive shell commands trigger explicit colorized `(y/n)` confirmation before running.
 
 ### Web Article Reader & Live Search
+
 - **Article Reader (`read_web_page`)** — Powered by `trafilatura` to extract clean text/markdown from blog posts, documentation, and news URLs.
 - **Web Search (`/search`)** — Integrated Tavily web search for real-time documentation, recent news, and online research.
 
 ### Performance & UX
+
 - **Multi-Session Chat** — Manage multiple independent chat tabs backed by a local SQLite database (`agent_data.db`).
 - **Memory Compaction** — Automatically summarizes older context when history exceeds thresholds to preserve tokens and keep response times fast.
 - **Skill & Plugin System** — Add markdown instruction files to `./skills/` or install dynamic prompt plugins directly from GitHub via `/plugin add`.
@@ -45,22 +49,26 @@
 ## Quick Install
 
 ### Prerequisites
+
 - [Git](https://git-scm.com)
 - [Python 3.10+](https://python.org)
 
 ### Installation Commands
 
 **Windows (PowerShell):**
+
 ```powershell
 irm https://raw.githubusercontent.com/snui1s/losna-cli/main/install.ps1 | iex
 ```
 
 **macOS / Linux:**
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/install.sh | bash
 ```
 
 After installation, **restart your terminal** and launch:
+
 ```bash
 losna
 ```
@@ -73,7 +81,8 @@ losna
 3. Installs all required dependencies automatically
 4. Registers the `losna` command on your system `PATH`
 
-*No global Python packages are modified. Everything is self-contained inside `~/.losna/`.*
+_No global Python packages are modified. Everything is self-contained inside `~/.losna/`._
+
 </details>
 
 <details>
@@ -82,14 +91,17 @@ losna
 **Updating:** Re-run the quick install command. The installer detects existing installations and pulls the latest updates.
 
 **Uninstalling (Windows PowerShell):**
+
 ```powershell
 irm https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.ps1 | iex
 ```
 
 **Uninstalling (macOS / Linux):**
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.sh | bash
 ```
+
 </details>
 
 ---
@@ -98,8 +110,8 @@ curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/uninstall.sh |
 
 On first launch, Losna CLI prompts for configuration:
 
-1. **OpenRouter API Key** *(required)* — Connects to AI models via OpenRouter. Get one at [openrouter.ai](https://openrouter.ai).
-2. **Web Search** *(optional)* — Enable web search using a [Tavily](https://tavily.com) API key.
+1. **OpenRouter API Key** _(required)_ — Connects to AI models via OpenRouter. Get one at [openrouter.ai](https://openrouter.ai).
+2. **Web Search** _(optional)_ — Enable web search using a [Tavily](https://tavily.com) API key.
 
 All keys are stored locally in `~/.losnarc` (JSON format) and are never sent anywhere else.
 
@@ -107,40 +119,41 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 
 ## Slash Commands
 
-| Command | Description |
-|---|---|
-| `/help` | Show all available commands and loaded skills |
-| `/new <title>` | Start a new chat session with a custom title |
-| `/rename [id] <title>` | Rename the current or specified chat session |
-| `/sessions` | List all saved chat sessions with their IDs |
-| `/switch <id>` | Switch to a different chat session by ID |
-| `/delete_session <id>` | Delete an existing chat session by ID |
-| `/history [id]` | View chat logs and tool execution history for a session |
-| `/model` | View current OpenRouter model or switch to a new model ID |
-| `/readonly` | Toggle Read-Only Mode (blocks file modification & shell execution) |
-| `/diff [file\|session]` | View colored syntax-highlighted git diff for a file or session memory state |
-| `/enter2confirm` | Toggle double-Enter requirement before sending prompts to AI |
-| `/pin <text>` | Pin a custom rule/fact to AI Core Memory (remembered forever across sessions) |
-| `/pins` | List all pinned Core Memory rules with their database IDs |
-| `/unpin <id>` | Unpin/remove a Core Memory rule by ID or exact text |
-| `/export [path]` | Export active session chat log into a structured Markdown document |
-| `/clear` | Clear terminal screen and re-render header banner |
-| `/ls [path]` | List directory files and folders in clean formatted view |
-| `/cd <path>` | Change working directory (supports '..', '~', and '-') |
-| `/init-ai` | Generate a starter 'ai.txt' blueprint file for project auto-detection |
-| `/max_tool_calls [n]` | View or set maximum tool call limit per turn (persisted in ~/.losnarc) |
-| `/plugin add <url>` | Download and install all skills from a GitHub repository |
-| `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository |
-| `/plugin remove <name>` | Uninstall/remove a custom skill plugin from local project |
-| `/plugin list` | List all installed skill plugins and their enabled status |
-| `/plugin enable <name>` | Enable a disabled skill plugin globally |
-| `/plugin disable <name>` | Disable an active skill plugin globally |
-| `/<skill> off\|on\|status` | Quick toggle or status check for an individual skill |
-| `/search <query>` | Search the web using Tavily and synthesize results |
-| `/usage` | Show session token usage and estimated cost breakdown |
-| `/exit` or `/quit` | Exit Losna CLI session |
+| Command                            | Description                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `/help`                            | Show all available commands and loaded skills                                 |
+| `/new <title>`                     | Start a new chat session with a custom title                                  |
+| `/rename [id] <title>`             | Rename the current or specified chat session                                  |
+| `/sessions`                        | List all saved chat sessions with their IDs                                   |
+| `/switch <id>`                     | Switch to a different chat session by ID                                      |
+| `/delete_session <id>`             | Delete an existing chat session by ID                                         |
+| `/history [id]`                    | View chat logs and tool execution history for a session                       |
+| `/model`                           | View current OpenRouter model or switch to a new model ID                     |
+| `/readonly`                        | Toggle Read-Only Mode (blocks file modification & shell execution)            |
+| `/diff [file\|session]`            | View colored syntax-highlighted git diff for a file or session memory state   |
+| `/enter2confirm`                   | Toggle double-Enter requirement before sending prompts to AI                  |
+| `/pin <text>`                      | Pin a custom rule/fact to AI Core Memory (remembered forever across sessions) |
+| `/pins`                            | List all pinned Core Memory rules with their database IDs                     |
+| `/unpin <id>`                      | Unpin/remove a Core Memory rule by ID or exact text                           |
+| `/export [path]`                   | Export active session chat log into a structured Markdown document            |
+| `/clear`                           | Clear terminal screen and re-render header banner                             |
+| `/ls [path]`                       | List directory files and folders in clean formatted view                      |
+| `/cd <path>`                       | Change working directory (supports '..', '~', and '-')                        |
+| `/init-ai`                         | Generate a starter 'ai.txt' blueprint file for project auto-detection         |
+| `/max_tool_calls [n]`              | View or set maximum tool call limit per turn (persisted in ~/.losnarc)        |
+| `/plugin add <url>`                | Download and install all skills from a GitHub repository                      |
+| `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository                |
+| `/plugin remove <name>`            | Uninstall/remove a custom skill plugin from local project                     |
+| `/plugin list`                     | List all installed skill plugins and their enabled status                     |
+| `/plugin enable <name>`            | Enable a disabled skill plugin globally                                       |
+| `/plugin disable <name>`           | Disable an active skill plugin globally                                       |
+| `/<skill> off\|on\|status`         | Quick toggle or status check for an individual skill                          |
+| `/search <query>`                  | Search the web using Tavily and synthesize results                            |
+| `/usage`                           | Show session token usage and estimated cost breakdown                         |
+| `/exit` or `/quit`                 | Exit Losna CLI session                                                        |
 
 ### 💡 Slash Command Examples
+
 ```bash
 # File Context & Workspace Inspection
 /init-ai
@@ -178,6 +191,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 Project skills stored in `./skills/<skill-name>/SKILL.md` are automatically recognized as slash commands (e.g., `/unit-testing`).
 
 ### Installing Plugins from GitHub
+
 ```bash
 # Install all skills from a repository
 /plugin add https://github.com/JuliusBrussee/caveman
@@ -187,6 +201,7 @@ Project skills stored in `./skills/<skill-name>/SKILL.md` are automatically reco
 ```
 
 ### Removing Plugins
+
 ```bash
 # Interactive selection list
 /plugin remove
@@ -196,13 +211,17 @@ Project skills stored in `./skills/<skill-name>/SKILL.md` are automatically reco
 ```
 
 ### Writing Custom Skills
+
 Create `./skills/my-custom-skill/SKILL.md` in your project:
+
 ```markdown
 ---
 name: my-custom-skill
 description: Custom team coding guidelines and security review rules.
 ---
+
 # Instructions
+
 1. Always check for memory leaks and unchecked input...
 2. Use strict typing...
 ```
@@ -225,10 +244,30 @@ losna-cli/
 │       ├── skills_loader.py # Dynamic skill loading from project files
 │       ├── plugin_manager.py# Remote plugin package installer
 │       └── ui.py            # Terminal UI (spinners, banners, markdown renderer)
+├── evals/                   # LLM evaluation datasets, metrics & benchmark runner
 ├── skills/                  # Local project skill definitions
 ├── tests/                   # Automated pytest suite
 ├── install.ps1              # Windows installer
 ├── install.sh               # macOS/Linux installer
 ├── pyproject.toml           # Package metadata, dependencies & bump-my-version
 └── README.md
+```
+
+---
+
+## LLM Evals & Benchmarking
+
+Losna CLI includes a dedicated LLM evaluation and benchmarking suite using **DeepEval** to test prompt performance, tool dispatch accuracy, memory compaction, and security audit quality.
+
+### Running Evals & Benchmarks
+
+```bash
+# Run deterministic unit evaluations via pytest
+pytest evals/ -v
+
+# Run benchmark runner in dry-run mode (offline)
+python -m evals.run_benchmarks --dry-run
+
+# Run live benchmark against target OpenRouter model and export scorecard
+python -m evals.run_benchmarks --model anthropic/claude-3.5-sonnet --output benchmark_scorecard.md
 ```

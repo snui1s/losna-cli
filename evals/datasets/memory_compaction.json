@@ -1,0 +1,43 @@
+[
+  {
+    "id": "mem_compaction_1",
+    "description": "Conversation with architecture decisions and secret keys",
+    "conversation_history": [
+      {"role": "user", "content": "เรากำลังพัฒนาโปรเจกต์ชื่อ SuperApp โดยใช้ FastAPI และ PostgreSQL ในโหมด Async"},
+      {"role": "assistant", "content": "รับทราบครับ โครงสร้าง Async FastAPI + PostgreSQL แนะนำใช้ asyncpg และ SQLAlchemy 2.0 ครับ"},
+      {"role": "user", "content": "เราตั้ง port เป็น 8080 และห้ามใช้ ORM ให้ใช้ raw SQL ผ่าน asyncpg เท่านั้น"},
+      {"role": "assistant", "content": "เข้าใจแล้วครับ จะใช้ raw SQL ผ่าน asyncpg บน port 8080"},
+      {"role": "user", "content": "ไฟล์หลักอยู่ที่ src/server/main.py อย่าลืมใส่ healthcheck endpoint ที่ /healthz"},
+      {"role": "assistant", "content": "เพิ่ม /healthz ที่ src/server/main.py เรียบร้อยครับ"}
+    ],
+    "key_facts_to_retain": [
+      "SuperApp",
+      "FastAPI",
+      "PostgreSQL",
+      "port 8080",
+      "ห้ามใช้ ORM / ใช้ raw SQL asyncpg",
+      "src/server/main.py",
+      "/healthz endpoint"
+    ]
+  },
+  {
+    "id": "mem_compaction_2",
+    "description": "Conversation with security audit requirements",
+    "conversation_history": [
+      {"role": "user", "content": "เราต้องการทำ Security Audit ในโหมด /readonly สำหรับไฟล์ auth.py"},
+      {"role": "assistant", "content": "เข้าสู่โหมด Read-Only แล้ว พร้อมตรวจไฟล์ auth.py ครับ"},
+      {"role": "user", "content": "พบช่องโหว่ CVE-2023-99999 เกี่ยวกับ JWT signature bypass ในฟังก์ชัน verify_token"},
+      {"role": "assistant", "content": "บันทึกช่องโหว่ CVE-2023-99999 ใน verify_token เรียบร้อยแล้วครับ"},
+      {"role": "user", "content": "ทีมกำหนดให้แก้ปัญหาด้วยการเปลี่ยนไปใช้ RS256 algorithm เท่านั้น"},
+      {"role": "assistant", "content": "เข้าใจแล้วครับ วิธีแก้คือใช้ RS256 algorithm สำหรับ JWT signature"}
+    ],
+    "key_facts_to_retain": [
+      "Security Audit",
+      "/readonly",
+      "auth.py",
+      "CVE-2023-99999",
+      "verify_token",
+      "RS256 algorithm"
+    ]
+  }
+]

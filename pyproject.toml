@@ -17,6 +17,11 @@ dependencies = [
     "pytest>=9.1.1",
 ]
 
+[project.optional-dependencies]
+evals = [
+    "deepeval>=1.0.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/snui1s/losna-cli"
 Repository = "https://github.com/snui1s/losna-cli"
