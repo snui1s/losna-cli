@@ -863,12 +863,25 @@ def _trigger_async_update_check():
         local_sha = None
         try:
             head_path = os.path.join(local_git_dir, "HEAD")
-            with open(head_path, "r") as f:
+            with open(head_path, "r", encoding="utf-8", errors="ignore") as f:
                 ref = f.read().strip()
             if ref.startswith("ref:"):
-                ref_path = os.path.join(local_git_dir, ref.split(" ")[1])
-                with open(ref_path, "r") as f:
-                    local_sha = f.read().strip()
+                ref_subpath = ref.split(" ", 1)[1].strip()
+                ref_path = os.path.join(local_git_dir, ref_subpath)
+                if os.path.exists(ref_path):
+                    with open(ref_path, "r", encoding="utf-8", errors="ignore") as f:
+                        local_sha = f.read().strip()
+                else:
+                    packed_path = os.path.join(local_git_dir, "packed-refs")
+                    if os.path.exists(packed_path):
+                        with open(packed_path, "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                line = line.strip()
+                                if line and not line.startswith("#") and not line.startswith("^"):
+                                    parts = line.split(" ")
+                                    if len(parts) >= 2 and parts[1] == ref_subpath:
+                                        local_sha = parts[0]
+                                        break
             else:
                 local_sha = ref
         except Exception:

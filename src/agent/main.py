@@ -14,7 +14,7 @@ from . import session
 from . import skills_loader
 from . import mention_utils
 from .memory import compact_memory
-from .ui import get_user_input, print_banner, print_recent_messages_preview
+from .ui import get_user_input, print_session_header, print_recent_messages_preview
 from .slash_commands import handle_slash_command
 from .agent_loop import run_agent_loop
 from .usage_tracker import UsageTracker
@@ -27,19 +27,8 @@ def main():
     SYSTEM_PROMPT = conversation_history[0]["content"]
     usage_tracker = UsageTracker()
 
-    # Format model name and path for the banner display
-    model_display = "Deepseek V4 flash" if "deepseek-v4-flash" in config.MODEL_NAME else config.MODEL_NAME.split("/")[-1].replace("-", " ").title()
-    project_path = os.path.realpath(os.getcwd()).replace("\\", "/")
-
-    # Print the customized Losna CLI gold crescent moon banner
-    print_banner(model_display, project_path)
-    print(f"Current session: [{current_session_id}]")
-
-    auto_fname, auto_fpath, _ = prompts.load_auto_ai_context()
-    if auto_fname:
-        print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
-
-    print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/help' help menu | '/exit' or '/quit' to leave.\n")
+    # Print banner, session header, and trigger update check
+    print_session_header(current_session_id)
 
     # Render recent message preview if resuming an existing session with history
     recent_msgs = db.get_recent_messages(current_session_id, limit=3)
