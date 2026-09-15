@@ -45,8 +45,8 @@ export default function Footer() {
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                 <li><Link href="/" style={{ transition: 'color 0.2s' }}>Home</Link></li>
                 <li><Link href="/docs" style={{ transition: 'color 0.2s' }}>Documentation</Link></li>
-                <li><a href="/#features" style={{ transition: 'color 0.2s' }}>Features</a></li>
-                <li><a href="/#benchmarks" style={{ transition: 'color 0.2s' }}>Benchmarks</a></li>
+                <li><Link href="/#features" style={{ transition: 'color 0.2s' }}>Features</Link></li>
+                <li><Link href="/#benchmarks" style={{ transition: 'color 0.2s' }}>Benchmarks</Link></li>
               </ul>
             </div>
 

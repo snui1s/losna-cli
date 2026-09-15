@@ -75,9 +75,9 @@ export default function Navbar() {
           fontSize: '0.9rem',
           color: 'var(--text-secondary)',
         }} className="desktop-nav">
-          <a href="/#features" style={{ transition: 'color 0.2s' }} className="nav-link">Features</a>
-          <a href="/#terminal" style={{ transition: 'color 0.2s' }} className="nav-link">Interactive CLI</a>
-          <a href="/#benchmarks" style={{ transition: 'color 0.2s' }} className="nav-link">Benchmarks</a>
+          <Link href="/#features" style={{ transition: 'color 0.2s' }} className="nav-link">Features</Link>
+          <Link href="/#terminal" style={{ transition: 'color 0.2s' }} className="nav-link">Interactive CLI</Link>
+          <Link href="/#benchmarks" style={{ transition: 'color 0.2s' }} className="nav-link">Benchmarks</Link>
           <Link href="/docs" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--moon-gold)', fontWeight: 500 }}>
             <BookOpen size={16} />
             Documentation
@@ -140,9 +140,9 @@ export default function Navbar() {
           flexDirection: 'column',
           gap: '16px',
         }}>
-          <a href="/#features" onClick={() => setMobileOpen(false)}>Features</a>
-          <a href="/#terminal" onClick={() => setMobileOpen(false)}>Interactive CLI</a>
-          <a href="/#benchmarks" onClick={() => setMobileOpen(false)}>Benchmarks</a>
+          <Link href="/#features" onClick={() => setMobileOpen(false)}>Features</Link>
+          <Link href="/#terminal" onClick={() => setMobileOpen(false)}>Interactive CLI</Link>
+          <Link href="/#benchmarks" onClick={() => setMobileOpen(false)}>Benchmarks</Link>
           <Link href="/docs" onClick={() => setMobileOpen(false)} style={{ color: 'var(--moon-gold)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BookOpen size={16} />
             Documentation
