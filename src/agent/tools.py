@@ -4,7 +4,6 @@ import shlex
 import time
 from datetime import datetime
 from openrouter import OpenRouter
-import yfinance as yf
 import requests
 from . import config
 from . import skills_loader
@@ -98,6 +97,7 @@ def read_local_file(filepath):
 def get_stock_price(ticker):
     """Fetch current stock price using yfinance."""
     try:
+        import yfinance as yf
         # Fetch stock data
         stock = yf.Ticker(ticker)
         # Fetch 1-day historical data (fastest way to get current price)

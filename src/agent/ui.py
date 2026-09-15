@@ -828,15 +828,57 @@ def print_session_header(session_id: int):
     auto_fname, auto_fpath, _ = prompts.load_auto_ai_context()
     if auto_fname:
         print(f"  \033[1;36m[System]: Auto-loaded project AI instructions from '{auto_fname}' ({auto_fpath})\033[0m")
+    update_notice = _get_cached_update_notice()
+    if update_notice:
+        print(update_notice)
+
     print("Commands: '/new <title>' new chat | '/switch <id>' change chat | '@file' attach file | '/ls' list dir | '/cd' change dir | '/init-ai' init blueprint | '/help' help menu | '/exit' or '/quit' to leave.\n")
 
-    # Trigger update checker in a non-blocking background thread
+    # Trigger update checker in a non-blocking background thread (refreshes cache silently)
     _trigger_async_update_check()
 
 
-def _trigger_async_update_check():
+def _get_cached_update_notice() -> str:
+    """
+    Checks if a newer version is available based on ~/.losna/update_cache.json.
+    Returns a formatted notice string if an update is available, or empty string.
+    Runs instantaneously on startup without network delay.
+    """
+    GREEN = "\033[38;5;120m"
+    GRAY = "\033[38;5;244m"
+    LIGHT_BLUE = "\033[1;38;5;75m"
+    RESET = "\033[0m"
+
+    global_dir = os.path.expanduser("~/.losna")
+    cache_file = os.path.join(global_dir, "update_cache.json")
+    if not os.path.exists(cache_file):
+        return ""
+
+    try:
+        with open(cache_file, "r") as f:
+            data = json.load(f)
+        if data.get("has_update"):
+            if os.name == 'nt':
+                cmd_hint = "irm https://raw.githubusercontent.com/snui1s/losna-cli/main/install.ps1 | iex"
+                return (
+                    f"  {GREEN}✨ A new version of Losna CLI is available!{RESET}\n"
+                    f"  {GRAY}Run in PowerShell to update:{RESET} {LIGHT_BLUE}{cmd_hint}{RESET}\n"
+                )
+            else:
+                cmd_hint = "curl -sSL https://raw.githubusercontent.com/snui1s/losna-cli/main/install.sh | bash"
+                return (
+                    f"  {GREEN}✨ A new version of Losna CLI is available!{RESET}\n"
+                    f"  {GRAY}Run in Terminal to update:{RESET} {LIGHT_BLUE}{cmd_hint}{RESET}\n"
+                )
+    except Exception:
+        pass
+    return ""
+
+
+def _trigger_async_update_check(print_notification: bool = False):
     """
     Spawns a background thread to check for updates against the GitHub repository.
+    Updates ~/.losna/update_cache.json silently to avoid interrupting prompt_toolkit.
     Never blocks the main program startup.
     """
     import urllib.request
@@ -916,13 +958,19 @@ def _trigger_async_update_check():
                     res_data = json.loads(response.read().decode())
                     remote_sha = res_data.get("sha")
 
+                has_update = bool(remote_sha and local_sha != remote_sha)
                 os.makedirs(global_dir, exist_ok=True)
                 with open(cache_file, "w") as f:
-                    json.dump({"remote_sha": remote_sha, "last_check": now}, f)
+                    json.dump({
+                        "remote_sha": remote_sha,
+                        "local_sha": local_sha,
+                        "has_update": has_update,
+                        "last_check": now
+                    }, f)
             except Exception:
                 remote_sha = cached_sha
 
-        if remote_sha and local_sha != remote_sha:
+        if print_notification and remote_sha and local_sha != remote_sha:
             print(f"\n  {GREEN}✨ A new version of Losna CLI is available!{RESET}")
             if os.name == 'nt':
                 print(f"  {GRAY}Run this in PowerShell to update:{RESET}")
