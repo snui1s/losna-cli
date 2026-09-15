@@ -8,3 +8,6 @@ uv.lock
 *.egg-info/
 build/
 .vscode
+website/node_modules/
+website/.next/
+website/out/

@@ -58,7 +58,12 @@ def select_session():
     prompt_label = f"Session [default: {default_sid}]: " if default_sid is not None else "Session: "
 
     while True:
-        choice = input(prompt_label).strip()
+        try:
+            choice = input(prompt_label).strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting...")
+            import sys
+            sys.exit(0)
 
         # Pressing Enter defaults to the most recent session
         if not choice and default_sid is not None:

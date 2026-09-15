@@ -35,14 +35,19 @@ def test_update_check_with_loose_ref(tmp_path, monkeypatch, capsys):
 
     with patch("urllib.request.urlopen", mock_urlopen):
         ui._trigger_async_update_check()
-        # Give thread a moment to finish
         time.sleep(0.3)
 
-    out = capsys.readouterr().out
-    assert "A new version of Losna CLI is available" in out
+    cache_file = global_dir / "update_cache.json"
+    assert cache_file.exists()
+    cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert cache_data.get("has_update") is True
+    assert cache_data.get("remote_sha") == "bbb222"
+
+    notice = ui._get_cached_update_notice()
+    assert "A new version of Losna CLI is available" in notice
 
 
-def test_update_check_with_packed_ref(tmp_path, monkeypatch, capsys):
+def test_update_check_with_packed_ref(tmp_path, monkeypatch):
     git_dir = tmp_path / ".git"
     git_dir.mkdir(parents=True)
     (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
@@ -64,6 +69,22 @@ def test_update_check_with_packed_ref(tmp_path, monkeypatch, capsys):
         ui._trigger_async_update_check()
         time.sleep(0.3)
 
+    cache_file = global_dir / "update_cache.json"
+    assert cache_file.exists()
+    cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert cache_data.get("has_update") is True
+
+
+def test_print_session_header_displays_cached_notice(tmp_path, monkeypatch, capsys):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    cache_file = global_dir / "update_cache.json"
+    cache_file.write_text(json.dumps({"has_update": True, "remote_sha": "bbb222"}), encoding="utf-8")
+
+    monkeypatch.setattr(os.path, "expanduser", lambda p: str(global_dir))
+    monkeypatch.setattr(ui, "_trigger_async_update_check", lambda: None)
+
+    ui.print_session_header(1)
     out = capsys.readouterr().out
     assert "A new version of Losna CLI is available" in out
 
@@ -73,4 +94,3 @@ if __name__ == "__main__":
     import pytest
     print(f"\n  Running Update Check Tests: {__file__}\n")
     sys.exit(pytest.main([__file__, "-v", "-s"]))
-
