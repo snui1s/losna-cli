@@ -2,11 +2,31 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Terminal, BookOpen, Menu, X, ShieldCheck } from 'lucide-react';
 import GithubIcon from './icons/GithubIcon';
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  const isHome = pathname === '/' || pathname === '' || pathname === '/losna-cli' || pathname === '/losna-cli/';
+
+  const getSectionHref = (id: string) => {
+    return isHome ? `#${id}` : `${basePath}/#${id}`;
+  };
+
+  const handleSectionClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (isHome) {
+      e.preventDefault();
+      const elem = document.getElementById(id);
+      if (elem) {
+        elem.scrollIntoView({ behavior: 'smooth' });
+        window.history.pushState(null, '', `#${id}`);
+      }
+    }
+    setMobileOpen(false);
+  };
 
   return (
     <header style={{
@@ -75,9 +95,30 @@ export default function Navbar() {
           fontSize: '0.9rem',
           color: 'var(--text-secondary)',
         }} className="desktop-nav">
-          <Link href="/#features" style={{ transition: 'color 0.2s' }} className="nav-link">Features</Link>
-          <Link href="/#terminal" style={{ transition: 'color 0.2s' }} className="nav-link">Interactive CLI</Link>
-          <Link href="/#benchmarks" style={{ transition: 'color 0.2s' }} className="nav-link">Benchmarks</Link>
+          <a
+            href={getSectionHref('features')}
+            onClick={(e) => handleSectionClick(e, 'features')}
+            style={{ transition: 'color 0.2s' }}
+            className="nav-link"
+          >
+            Features
+          </a>
+          <a
+            href={getSectionHref('terminal')}
+            onClick={(e) => handleSectionClick(e, 'terminal')}
+            style={{ transition: 'color 0.2s' }}
+            className="nav-link"
+          >
+            Interactive CLI
+          </a>
+          <a
+            href={getSectionHref('benchmarks')}
+            onClick={(e) => handleSectionClick(e, 'benchmarks')}
+            style={{ transition: 'color 0.2s' }}
+            className="nav-link"
+          >
+            Benchmarks
+          </a>
           <Link href="/docs" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--moon-gold)', fontWeight: 500 }}>
             <BookOpen size={16} />
             Documentation
@@ -140,9 +181,9 @@ export default function Navbar() {
           flexDirection: 'column',
           gap: '16px',
         }}>
-          <Link href="/#features" onClick={() => setMobileOpen(false)}>Features</Link>
-          <Link href="/#terminal" onClick={() => setMobileOpen(false)}>Interactive CLI</Link>
-          <Link href="/#benchmarks" onClick={() => setMobileOpen(false)}>Benchmarks</Link>
+          <a href={getSectionHref('features')} onClick={(e) => handleSectionClick(e, 'features')}>Features</a>
+          <a href={getSectionHref('terminal')} onClick={(e) => handleSectionClick(e, 'terminal')}>Interactive CLI</a>
+          <a href={getSectionHref('benchmarks')} onClick={(e) => handleSectionClick(e, 'benchmarks')}>Benchmarks</a>
           <Link href="/docs" onClick={() => setMobileOpen(false)} style={{ color: 'var(--moon-gold)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BookOpen size={16} />
             Documentation

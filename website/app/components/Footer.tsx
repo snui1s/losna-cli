@@ -1,7 +1,28 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function Footer() {
+  const pathname = usePathname();
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  const isHome = pathname === '/' || pathname === '' || pathname === '/losna-cli' || pathname === '/losna-cli/';
+
+  const getSectionHref = (id: string) => {
+    return isHome ? `#${id}` : `${basePath}/#${id}`;
+  };
+
+  const handleSectionClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (isHome) {
+      e.preventDefault();
+      const elem = document.getElementById(id);
+      if (elem) {
+        elem.scrollIntoView({ behavior: 'smooth' });
+        window.history.pushState(null, '', `#${id}`);
+      }
+    }
+  };
   return (
     <footer style={{
       borderTop: '1px solid var(--border-subtle)',
@@ -45,8 +66,24 @@ export default function Footer() {
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                 <li><Link href="/" style={{ transition: 'color 0.2s' }}>Home</Link></li>
                 <li><Link href="/docs" style={{ transition: 'color 0.2s' }}>Documentation</Link></li>
-                <li><Link href="/#features" style={{ transition: 'color 0.2s' }}>Features</Link></li>
-                <li><Link href="/#benchmarks" style={{ transition: 'color 0.2s' }}>Benchmarks</Link></li>
+                <li>
+                  <a
+                    href={getSectionHref('features')}
+                    onClick={(e) => handleSectionClick(e, 'features')}
+                    style={{ transition: 'color 0.2s' }}
+                  >
+                    Features
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={getSectionHref('benchmarks')}
+                    onClick={(e) => handleSectionClick(e, 'benchmarks')}
+                    style={{ transition: 'color 0.2s' }}
+                  >
+                    Benchmarks
+                  </a>
+                </li>
               </ul>
             </div>
 
