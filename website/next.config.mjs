@@ -3,8 +3,8 @@ const isProd = process.env.NODE_ENV === 'production';
 
 const nextConfig = {
   reactStrictMode: true,
-  output: 'export',
-  distDir: '../docs',
+  output: isProd ? 'export' : undefined,
+  distDir: isProd ? '../docs' : '.next',
   trailingSlash: true,
   images: {
     unoptimized: true,

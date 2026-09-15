@@ -72,7 +72,7 @@ try:
     import importlib.metadata
     VERSION = importlib.metadata.version("losna-cli")
 except Exception:
-    VERSION = "0.3.0"
+    VERSION = "0.7.3"
 
 MODEL_NAME = global_config.get("MODEL_NAME", "deepseek/deepseek-v4-flash")
 COMPACTION_MODEL = "google/gemini-2.5-flash-lite"
