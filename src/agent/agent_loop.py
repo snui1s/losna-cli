@@ -10,6 +10,7 @@ import sys
 import time
 import json
 import threading
+import queue
 from openrouter import OpenRouter
 from . import config
 from . import db
@@ -62,6 +63,61 @@ class StreamedMessage:
         return res
 
 
+_STREAM_SENTINEL = object()
+
+
+def stream_with_timeout(stream_gen, timeout: float):
+    """
+    Wraps an iterator/generator, yielding items with an inactivity timeout between chunks.
+    If no new item is yielded within `timeout` seconds, raises TimeoutError.
+    Properly closes the generator / response if available.
+    """
+    chunk_queue = queue.Queue()
+    stop_event = threading.Event()
+
+    def _worker():
+        try:
+            for item in stream_gen:
+                if stop_event.is_set():
+                    break
+                chunk_queue.put((item, None))
+        except Exception as e:
+            chunk_queue.put((None, e))
+        finally:
+            chunk_queue.put((_STREAM_SENTINEL, None))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+    try:
+        while True:
+            try:
+                item, err = chunk_queue.get(timeout=timeout)
+            except queue.Empty:
+                stop_event.set()
+                if hasattr(stream_gen, "close") and callable(stream_gen.close):
+                    try:
+                        stream_gen.close()
+                    except Exception:
+                        pass
+                raise TimeoutError(
+                    f"Model stream timed out after {timeout:.0f}s with no new response"
+                )
+
+            if err is not None:
+                raise err
+            if item is _STREAM_SENTINEL:
+                break
+            yield item
+    finally:
+        stop_event.set()
+        if hasattr(stream_gen, "close") and callable(stream_gen.close):
+            try:
+                stream_gen.close()
+            except Exception:
+                pass
+
+
 # ────────────────────────────────────────────────────────────────────
 # Main agent loop
 # ────────────────────────────────────────────────────────────────────
@@ -91,6 +147,7 @@ def run_agent_loop(ctx):
     # Take a backup snapshot for clean recovery on errors
     safe_history_backup = list(conversation_history)
     start_message_id = db.get_last_message_id(current_session_id)
+    renderer = None
 
     while attempt < config.MAX_RETRIES:
         try:
@@ -106,7 +163,10 @@ def run_agent_loop(ctx):
                 print(f"  [Thinking...] (sending {len(conversation_history)} messages to API)")
             agent_start_time = time.time()
 
-            with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
+            timeout_seconds = getattr(config, "API_TIMEOUT", 60)
+            timeout_ms = int(timeout_seconds * 1000)
+
+            with OpenRouter(api_key=config.OPENROUTER_API_KEY, timeout_ms=timeout_ms) as client:
                 spinner = Spinner("Reflecting", show_timer=True, auto_status=True)
                 spinner.start()
 
@@ -169,10 +229,11 @@ def run_agent_loop(ctx):
                         model=config.MODEL_NAME,
                         messages=payload_messages,
                         tools=active_tools,
-                        stream=True
+                        stream=True,
+                        timeout_ms=timeout_ms
                     )
 
-                    for chunk in stream_gen:
+                    for chunk in stream_with_timeout(stream_gen, timeout=timeout_seconds):
                         # Capture usage from the last chunk
                         chunk_usage = getattr(chunk, "usage", None)
                         if chunk_usage:
@@ -423,6 +484,11 @@ def run_agent_loop(ctx):
             break
         except Exception as e:
             attempt += 1
+            if renderer and getattr(renderer, "started", False):
+                try:
+                    renderer.finish_intermediate()
+                except Exception:
+                    pass
             print(f"  [Error]: {e}")
 
             # Run diagnostic check to give actionable insights to the user
@@ -436,6 +502,11 @@ def run_agent_loop(ctx):
             # Rollback to safe state on errors
             ctx["conversation_history"] = list(safe_history_backup)
             conversation_history = ctx["conversation_history"]
+
+            # Keep SQLite in sync with the rolled-back in-memory history,
+            # mirroring the KeyboardInterrupt path above. Otherwise this turn's
+            # assistant/tool rows stay orphaned and get replayed on session resume.
+            db.delete_messages_after(current_session_id, start_message_id)
 
             if attempt < config.MAX_RETRIES:
                 time.sleep(config.RETRY_DELAY)

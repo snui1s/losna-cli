@@ -35,6 +35,29 @@ def truncate_content(content, max_chars=5000, head_ratio=0.6):
     )
 
 
+def _resolve_in_project(path):
+    """
+    Resolve `path` to an absolute real path and verify it stays inside the
+    project working directory. Returns (resolved_path, error); error is None
+    on success.
+
+    Uses os.path.commonpath (correctly handles '..' traversal and boundary
+    cases like 'project' vs 'project2') compared via os.path.normcase so the
+    check is case-insensitive on Windows, where a bare str.startswith() would
+    wrongly block valid paths. Cross-drive paths on Windows raise ValueError
+    from commonpath, which is treated as an out-of-project block.
+    """
+    base_dir = os.path.realpath(os.getcwd())
+    try:
+        target_path = os.path.realpath(path)
+        common = os.path.commonpath([base_dir, target_path])
+    except ValueError:
+        return None, "Error: Security block! Access to files outside the project directory is denied."
+    if os.path.normcase(common) != os.path.normcase(base_dir):
+        return None, "Error: Security block! Access to files outside the project directory is denied."
+    return target_path, None
+
+
 def get_current_time():
     """
     Function: Retrieves the current system date and time formatted as a string.
@@ -55,14 +78,9 @@ def read_local_file(filepath):
     RAW_READ_THRESHOLD = 10000
  
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
- 
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Access to files outside the project directory is denied."
+        target_path, err = _resolve_in_project(filepath)
+        if err:
+            return err
             
         if not os.path.exists(target_path):
             return f"Error: File '{filepath}' not found."
@@ -75,14 +93,21 @@ def read_local_file(filepath):
                 content = f.read()
             return f"Content of '{filepath}':\n{content}"
  
-        # Large file: read a chunk and delegate to a Sub-agent to summarize
-        with open(target_path, "r", encoding="utf-8") as f:
-            content = f.read()
-            
-        print(f"    [Sub-Agent]: Analyzing file {filepath}...")
-        sub_agent_prompt = f"You are a file analysis AI assistant. Please summarize the key content of the following code or document as concisely as possible:\n\n{content}"
+        # Large file: read a BOUNDED chunk only (never load the whole file into
+        # memory / into a single billed request), then delegate to a Sub-agent.
+        MAX_SUBAGENT_INPUT_CHARS = 100_000
+        with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read(MAX_SUBAGENT_INPUT_CHARS)
+
+        print(f"    [Sub-Agent]: Analyzing file {filepath} (first {len(content)} chars)...")
+        sub_agent_prompt = (
+            "You are a file analysis AI assistant. Please summarize the key content "
+            "of the following code or document as concisely as possible. Note: this may "
+            "be a truncated excerpt of a larger file.\n\n"
+            f"{content}"
+        )
         
-        with OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY")) as client:
+        with OpenRouter(api_key=config.OPENROUTER_API_KEY) as client:
             sub_response = client.chat.send(
                 model=MODEL_NAME, # Use a free/cheap model for helper tasks
                 messages=[{"role": "user", "content": sub_agent_prompt}]
@@ -119,15 +144,9 @@ def get_stock_price(ticker):
 def list_directory(folder_path="."):
     """Simulate 'ls' command: List files and folders in the specified folder path."""
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(folder_path)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        # Guardrail: Prevent directory listing outside the project directory
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Cannot list directories outside the project."
+        target_path, err = _resolve_in_project(folder_path)
+        if err:
+            return err
             
         if not os.path.exists(target_path):
             return f"Error: Directory '{folder_path}' not found."
@@ -167,14 +186,9 @@ def list_directory(folder_path="."):
 def search_in_files(keyword, folder_path="."):
     """Simulate 'grep' command: Search for keyword within .py, .txt, .json, .md, .env files."""
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(folder_path)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Cannot search outside the project."
+        target_path, err = _resolve_in_project(folder_path)
+        if err:
+            return err
             
         allowed_extensions = ('.py', '.txt', '.json', '.md', '.env')
         results = []
@@ -190,7 +204,7 @@ def search_in_files(keyword, folder_path="."):
                             for i, line in enumerate(lines):
                                 if keyword in line:
                                     # Store file path, matching line number, and matching line content
-                                    rel_path = os.path.relpath(file_path, base_dir)
+                                    rel_path = os.path.relpath(file_path, os.getcwd())
                                     results.append(f"{rel_path} (Line {i+1}): {line.strip()}")
                     except:
                         pass # Skip unreadable or system files
@@ -217,14 +231,9 @@ def edit_local_file(filepath, content, mode="w"):
     mode='a' is to append content to the end of the file.
     """
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Cannot edit files outside the project."
+        target_path, err = _resolve_in_project(filepath)
+        if err:
+            return err
             
         if mode not in ["w", "a"]:
             return "Error: Mode must be 'w' (overwrite) or 'a' (append)."
@@ -249,15 +258,9 @@ def view_file_lines(filepath, start_line=1, end_line=200):
     Helps save tokens and reduce latency when reading large files.
     """
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        # Hard Guardrail: Restrict file reading to the project directory
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Access to files outside the project directory is denied."
+        target_path, err = _resolve_in_project(filepath)
+        if err:
+            return err
             
         if not os.path.exists(target_path):
             return f"Error: File '{filepath}' not found."
@@ -287,15 +290,9 @@ def replace_in_file(filepath, old_text, new_text):
     Allows the agent to modify specific parts of code or text accurately without overwriting the entire file.
     """
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        # Hard Guardrail: Restrict file editing to the project directory
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Access to files outside the project directory is denied."
+        target_path, err = _resolve_in_project(filepath)
+        if err:
+            return err
             
         if not os.path.exists(target_path):
             return f"Error: File '{filepath}' not found."
@@ -323,15 +320,9 @@ def replace_in_file(filepath, old_text, new_text):
 def delete_local_file(filepath, confirmed=False):
     """Simulate 'rm' command: Delete unnecessary or temporary files to keep the workspace organized."""
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        target_path = os.path.realpath(filepath)
-
-        if os.path.commonpath([base_dir, target_path]) != base_dir:
-            return "Error: Security block!"
-        
-        # Hard Guardrail: Strictly prohibit deleting files outside the project directory
-        if not target_path.startswith(base_dir):
-            return "Error: Security block! Cannot delete files outside the project."
+        target_path, err = _resolve_in_project(filepath)
+        if err:
+            return err
             
         if not os.path.exists(target_path):
             return f"Error: File '{filepath}' not found."
@@ -354,16 +345,12 @@ def delete_local_file(filepath, confirmed=False):
 def move_or_rename_file(source_path, dest_path):
     """Simulate 'mv' command: Move a file to a new path or rename it within the project."""
     try:
-        base_dir = os.path.realpath(os.getcwd())
-        src_abs = os.path.realpath(source_path)
-        dst_abs = os.path.realpath(dest_path)
-
-        if os.path.commonpath([base_dir, dst_abs]) != base_dir or os.path.commonpath([base_dir, src_abs]) != base_dir:
-            return "Error: Security block!"
-        
-        # Hard Guardrail: Prohibit actions outside the project directory
-        if not src_abs.startswith(base_dir) or not dst_abs.startswith(base_dir):
-            return "Error: Security block! Actions outside the project directory are denied."
+        src_abs, src_err = _resolve_in_project(source_path)
+        if src_err:
+            return src_err
+        dst_abs, dst_err = _resolve_in_project(dest_path)
+        if dst_err:
+            return dst_err
             
         if not os.path.exists(src_abs):
             return f"Error: Source file '{source_path}' not found."
@@ -398,6 +385,16 @@ SHELL_DANGEROUS_PREFIXES = [
     'del', 'erase', 'rd', 'rmdir', 'cmd', 'powershell', 'bash', 'sh'
 ]
 
+# Inline interpreter execution runs arbitrary code that is invisible to the
+# literal pattern lists above (e.g. python -c "import shutil; shutil.rmtree(...)").
+# These can never be safely pattern-scanned, so they ALWAYS require explicit
+# user confirmation before running.
+SHELL_INLINE_INTERPRETER_PREFIXES = (
+    'python -c', 'python3 -c', 'uv run python -c',
+    'node -e', 'node --eval',
+    'perl -e', 'ruby -e', 'php -r',
+)
+
 SHELL_TIMEOUT_SECONDS = 10
 SHELL_OUTPUT_LIMIT = 5000
 
@@ -414,10 +411,12 @@ def execute_shell_command(command, confirmed=False):
         # Reject chained commands - shlex.split() cannot separate them into
         # distinct subprocess calls, which silently mangles things like
         # 'git add -A && git commit -m "..."' into a single broken command.
-        # python -c "..." ใช้ ; เป็น syntax ปกติของภาษา ไม่ใช่การ chain คำสั่ง shell
-        is_python_inline = command.strip().startswith(('python -c', 'python3 -c', 'uv run python -c'))
+        # Inline interpreter payloads (python -c "...") use ';' as normal
+        # language syntax, not shell chaining, so they are exempt from the
+        # chain check - but they are force-confirmed below instead.
+        is_inline_interpreter = command.strip().startswith(SHELL_INLINE_INTERPRETER_PREFIXES)
         
-        if not is_python_inline:
+        if not is_inline_interpreter:
             for chain_op in ['&&', '||', ';', '|']:
                 if chain_op in command:
                     return (f"Error: Chained commands ('{chain_op}') are not supported. "
@@ -425,10 +424,13 @@ def execute_shell_command(command, confirmed=False):
                             f"first, then call again for 'git commit -m ...').")
 
         lowered = command.lower()
+        # Normalize whitespace so multi-space forms ('rm -rf  /') cannot slip
+        # past the hard-block substring scan below.
+        normalized = ' '.join(lowered.split())
 
         # 1. Hard block: never allowed, no matter what
         for pattern in SHELL_BLOCKED_PATTERNS:
-            if pattern in lowered:
+            if pattern in lowered or pattern in normalized:
                 return f"Error: Blocked - command matches a forbidden pattern ('{pattern}')."
 
         # 2. Soft block: dangerous commands need confirmed=True to proceed
@@ -443,6 +445,13 @@ def execute_shell_command(command, confirmed=False):
                             f"destructive or impactful. Ask the user to confirm before "
                             f"re-calling this tool with confirmed=true.")
                 break
+
+        # 2b. Inline interpreter execution: arbitrary code is opaque to the
+        # literal pattern lists, so it can NEVER run without explicit consent.
+        if is_inline_interpreter and not confirmed:
+            return (f"CONFIRMATION_REQUIRED: The command '{command}' executes arbitrary inline "
+                    f"interpreter code, which cannot be safety-scanned. Ask the user to confirm "
+                    f"before re-calling this tool with confirmed=true.")
 
         # 3. Parse safely without shell=True (no pipe/redirect injection)
         try:

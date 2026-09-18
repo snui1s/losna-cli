@@ -72,7 +72,7 @@ try:
     import importlib.metadata
     VERSION = importlib.metadata.version("losna-cli")
 except Exception:
-    VERSION = "0.7.3"
+    VERSION = "0.8.0"
 
 MODEL_NAME = global_config.get("MODEL_NAME", "deepseek/deepseek-v4-flash")
 COMPACTION_MODEL = "google/gemini-2.5-flash-lite"
@@ -125,6 +125,27 @@ def update_model_name(new_model_name: str):
 
 MAX_RETRIES = 3
 RETRY_DELAY = 2
+
+# API and streaming timeout parameters (in seconds)
+try:
+    _env_timeout = os.environ.get("LOSNA_API_TIMEOUT")
+    API_TIMEOUT = int(_env_timeout) if _env_timeout else int(global_config.get("API_TIMEOUT", 60))
+except (ValueError, TypeError):
+    API_TIMEOUT = 60
+
+
+def set_api_timeout(seconds: int):
+    """
+    Sets the API_TIMEOUT limit (in seconds) and persists to ~/.losnarc.
+
+    Args:
+        seconds (int): Timeout duration in seconds.
+    """
+    global API_TIMEOUT
+    API_TIMEOUT = max(5, int(seconds))
+    global_config["API_TIMEOUT"] = API_TIMEOUT
+    save_global_config()
+
 
 # Memory management parameters
 MAX_ACTIVE_MESSAGES = 25

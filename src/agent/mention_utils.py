@@ -39,8 +39,14 @@ def extract_file_mentions(text: str):
 
         target_path = os.path.realpath(clean_path)
 
-        # Security check: must reside inside project working directory
-        if not target_path.startswith(base_dir):
+        # Security check: must reside inside project working directory.
+        # commonpath + normcase correctly handles '..' traversal and is
+        # case-insensitive on Windows; cross-drive paths raise ValueError.
+        try:
+            in_project = os.path.normcase(os.path.commonpath([base_dir, target_path])) == os.path.normcase(base_dir)
+        except ValueError:
+            in_project = False
+        if not in_project:
             continue
 
         if os.path.isfile(target_path) and clean_path not in valid_paths:

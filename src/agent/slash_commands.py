@@ -27,6 +27,7 @@ RESERVED_COMMANDS = {
     '/enter2confirm', '/pin', '/unpin', '/pins', '/export', '/clear', 'clear',
     '/ls', 'ls', '/cd', 'cd', '/init-ai', '/init_ai', '/initai',
     '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call',
+    '/timeout',
     '/usage'
 }
 
@@ -110,6 +111,8 @@ def handle_slash_command(user_input, ctx):
         return _cmd_export(user_input, ctx)
     if command in ("/max_tool_calls", "/max_tools", "/maxtools", "/max_tool_call"):
         return _cmd_max_tool_calls(user_input)
+    if command in ("/timeout", "/api_timeout"):
+        return _cmd_timeout(user_input)
     if command in ("/init-ai", "/init_ai", "/initai"):
         return _cmd_init_ai()
     if command in ("/ls", "ls"):
@@ -154,6 +157,7 @@ def _cmd_help(ctx):
     print("  /init-ai       - Generate starter 'ai.txt' blueprint file for project")
     print("  @<filepath>    - Attach local file content directly into AI context (e.g. '@README.md')")
     print("  /max_tool_calls [n] - View or set max tool calls limit per turn (persisted in ~/.losnarc)")
+    print("  /timeout [n]   - View or set API & streaming timeout in seconds (persisted in ~/.losnarc)")
     print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
     print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
     print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
@@ -618,6 +622,23 @@ def _cmd_max_tool_calls(user_input):
             print("Error: Please provide a positive integer greater than 0.\n")
     else:
         print(f"  [System]: Current MAX_TOOL_CALLS limit: {config.MAX_TOOL_CALLS}\n")
+    return True
+
+
+def _cmd_timeout(user_input):
+    parts = user_input.split()
+    if len(parts) > 1:
+        if parts[1].isdigit():
+            new_val = int(parts[1])
+            if new_val >= 5:
+                config.set_api_timeout(new_val)
+                print(f"  [System]: API_TIMEOUT updated and persisted to {new_val}s\n")
+            else:
+                print("Error: Please provide a timeout of at least 5 seconds.\n")
+        else:
+            print("Error: Please provide a valid positive integer for timeout in seconds.\n")
+    else:
+        print(f"  [System]: Current API_TIMEOUT: {config.API_TIMEOUT}s\n")
     return True
 
 
