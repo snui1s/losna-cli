@@ -9,8 +9,6 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-D4AF37?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#-quick-install)
 
-[Quick Start](#-quick-install) • [Features](#-key-features) • [Commands](#-slash-commands) • [Plugins](#-skill--plugin-system)
-
 </div>
 
 ---
@@ -86,7 +84,7 @@ _No global Python packages are modified. Everything is self-contained inside `~/
 </details>
 
 <details>
-<summary><b>🗑️ Updating & Uninstalling</b></summary>
+<summary><b>Updating & Uninstalling</b></summary>
 
 **Updating:** Re-run the quick install command. The installer detects existing installations and pulls the latest updates.
 
@@ -152,7 +150,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/usage`                           | Show session token usage and estimated cost breakdown                         |
 | `/exit` or `/quit`                 | Exit Losna CLI session                                                        |
 
-### 💡 Slash Command Examples
+### Slash Command Examples
 
 ```bash
 # File Context & Workspace Inspection
