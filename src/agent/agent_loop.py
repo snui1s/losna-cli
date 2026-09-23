@@ -18,6 +18,9 @@ from . import diff_utils
 from .tools import dispatch_tool, get_available_tools
 from .ui import Spinner, StreamBorderRenderer
 from .diagnostics import check_openrouter_health, format_diagnostic_summary
+from .logger import get_logger
+
+logger = get_logger("agent_loop")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -82,6 +85,7 @@ def stream_with_timeout(stream_gen, timeout: float):
                     break
                 chunk_queue.put((item, None))
         except Exception as e:
+            logger.error("Exception in streaming worker thread: %s", e, exc_info=True)
             chunk_queue.put((None, e))
         finally:
             chunk_queue.put((_STREAM_SENTINEL, None))
@@ -95,6 +99,7 @@ def stream_with_timeout(stream_gen, timeout: float):
                 item, err = chunk_queue.get(timeout=timeout)
             except queue.Empty:
                 stop_event.set()
+                logger.error("Model stream timed out after %.1fs with no new chunks from upstream provider.", timeout)
                 if hasattr(stream_gen, "close") and callable(stream_gen.close):
                     try:
                         stream_gen.close()
@@ -152,11 +157,13 @@ def run_agent_loop(ctx):
     while attempt < config.MAX_RETRIES:
         try:
             loop_iteration += 1
+            logger.info("Agent loop iteration %d (attempt %d/%d, session #%s, tool_calls_so_far=%d)", loop_iteration, attempt + 1, config.MAX_RETRIES, current_session_id, tool_call_count)
             if getattr(config, "DEBUG", False):
                 print(f"  [DEBUG] --- Loop iteration {loop_iteration} (attempt={attempt}, tool_calls_so_far={tool_call_count}) ---")
 
             if attempt > 0:
                 print(f"  [Retrying... {attempt}/{config.MAX_RETRIES}]")
+                logger.info("Retrying agent loop attempt %d/%d for session #%s", attempt + 1, config.MAX_RETRIES, current_session_id)
 
             # --- Start timing AI processing ---
             if getattr(config, "DEBUG", False):
@@ -182,7 +189,10 @@ def run_agent_loop(ctx):
                 def _bg_health_watcher():
                     if not health_stop_evt.wait(20.0):
                         if not first_token_received and not spinner.stop_event.is_set():
+                            logger.warning("Upstream model taking >20s to return first token. Running background OpenRouter diagnostic check...")
                             diag = check_openrouter_health(config.OPENROUTER_API_KEY, timeout=3.5)
+                            logger.warning("Background diagnostic result: status=%s, latency=%sms, message=%s, details=%s",
+                                           diag.get("status"), diag.get("latency_ms"), diag.get("message"), diag.get("details"))
                             if not first_token_received and not spinner.stop_event.is_set():
                                 status = diag.get("status")
                                 if status == "OK":
@@ -224,6 +234,9 @@ def run_agent_loop(ctx):
                         active_tools = None
                     else:
                         active_tools = get_available_tools(read_only=config.READ_ONLY_MODE)
+
+                    logger.info("Dispatching chat request to model '%s' (%d messages, timeout=%ds, tools=%s)",
+                                config.MODEL_NAME, len(payload_messages), timeout_seconds, bool(active_tools))
 
                     stream_gen = client.chat.send(
                         model=config.MODEL_NAME,
@@ -387,6 +400,9 @@ def run_agent_loop(ctx):
                         except (json.JSONDecodeError, TypeError):
                             args = {}
 
+                        logger.info("Executing tool '%s' with args: %s", func_name, json.dumps(args, ensure_ascii=False)[:300])
+                        tool_start_time = time.time()
+
                         # Dynamic Spinner for active Tool Execution
                         args_summary = str(args)[:35] + "..." if len(str(args)) > 35 else str(args)
                         tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary}")
@@ -399,9 +415,12 @@ def run_agent_loop(ctx):
                             # Handle interactive soft-block confirmation prompts
                             if isinstance(tool_result, str) and tool_result.startswith("CONFIRMATION_REQUIRED:"):
                                 tool_spinner.stop()
+                                logger.warning("Tool '%s' requested user confirmation for command: %s",
+                                               func_name, args.get('command') or args.get('command_line') or func_name)
 
                                 confirm_prompt = input(f"\n{RED}[!!!]{RESET} Agent requests to execute dangerous command:\n  '{args.get('command') or args.get('command_line') or func_name}'\nAllow execution? ({GREEN}y{RESET}/{RED}n{RESET}): ").strip().lower()
                                 if confirm_prompt == 'y':
+                                    logger.info("User approved dangerous command execution for tool '%s'", func_name)
                                     tool_spinner = Spinner(f"Running tool {CYAN}{func_name}{RESET} {args_summary} (Confirmed)")
                                     tool_spinner.start()
                                     try:
@@ -409,14 +428,20 @@ def run_agent_loop(ctx):
                                     finally:
                                         tool_spinner.stop()
                                 else:
+                                    logger.warning("User declined dangerous command execution for tool '%s'", func_name)
                                     tool_result = "Error: Command execution declined by the user."
                                     print("  [System]: Command declined by user.")
                         finally:
                             tool_spinner.stop()
 
+                        tool_duration = time.time() - tool_start_time
+
                         # Print success checkmark only on actual success
                         if not str(tool_result).startswith("Error"):
+                            logger.info("Tool '%s' finished successfully in %.2fs", func_name, tool_duration)
                             print(f"  {GREEN}✔{RESET} Executed {CYAN}{func_name}{RESET} successfully.")
+                        else:
+                            logger.warning("Tool '%s' returned error in %.2fs: %s", func_name, tool_duration, str(tool_result)[:300])
 
                         # Automatically trigger visual diff after file modifications
                         if func_name in {"edit_local_file", "replace_in_file", "delete_local_file", "move_or_rename_file"} and not str(tool_result).startswith("Error"):
@@ -453,6 +478,7 @@ def run_agent_loop(ctx):
                 else:
                     answer = message.content or "[No text response]"
                     total_elapsed = time.time() - loop_start_time
+                    logger.info("Agent response completed in %.2fs (loop total: %.2fs)", agent_duration, total_elapsed)
                     if getattr(config, "DEBUG", False):
                         print(f"  [DEBUG] Total loop time: {total_elapsed:.2f}s across {loop_iteration} iteration(s)")
 
@@ -465,6 +491,7 @@ def run_agent_loop(ctx):
                         cost_str = f" · ${cost:.4f}" if cost > 0 else ""
                         if tot_tokens > 0:
                             usage_info = f" · {tot_tokens:,} tokens{cost_str}"
+                        logger.info("Tokens: %d (prompt=%d, completion=%d) | Cost: $%s", tot_tokens, prompt_tokens, comp_tokens, f"{cost:.4f}")
 
                     if first_token_received:
                         renderer.finish(agent_duration, usage_info)
@@ -478,12 +505,15 @@ def run_agent_loop(ctx):
         except KeyboardInterrupt:
             RED = "\033[1;31m"
             RESET = "\033[0m"
+            logger.warning("Agent loop interrupted by user (KeyboardInterrupt / Esc) in session #%s. Rolling back turn.", current_session_id)
             print(f"\n{RED}  [System]: Operation canceled by user (Esc pressed).{RESET}\n")
             ctx["conversation_history"] = list(safe_history_backup)
             db.delete_messages_after(current_session_id, start_message_id)
             break
         except Exception as e:
             attempt += 1
+            logger.error("Exception in agent loop (attempt %d/%d, session #%s): %s",
+                         attempt, config.MAX_RETRIES, current_session_id, e, exc_info=True)
             if renderer and getattr(renderer, "started", False):
                 try:
                     renderer.finish_intermediate()
@@ -494,10 +524,12 @@ def run_agent_loop(ctx):
             # Run diagnostic check to give actionable insights to the user
             try:
                 diag = check_openrouter_health(config.OPENROUTER_API_KEY, timeout=3.5)
+                logger.info("Health diagnostic check result: status=%s, latency=%sms, details=%s",
+                            diag.get("status"), diag.get("latency_ms"), diag.get("details"))
                 diag_summary = format_diagnostic_summary(diag, config.MODEL_NAME)
                 print(diag_summary)
-            except Exception:
-                pass
+            except Exception as diag_err:
+                logger.warning("Failed to run diagnostics after error: %s", diag_err)
 
             # Rollback to safe state on errors
             ctx["conversation_history"] = list(safe_history_backup)
@@ -509,8 +541,10 @@ def run_agent_loop(ctx):
             db.delete_messages_after(current_session_id, start_message_id)
 
             if attempt < config.MAX_RETRIES:
+                logger.info("Waiting %.1fs before retry %d/%d...", config.RETRY_DELAY, attempt + 1, config.MAX_RETRIES)
                 time.sleep(config.RETRY_DELAY)
             else:
+                logger.error("Max retries (%d) exhausted for session #%s. Turn failed.", config.MAX_RETRIES, current_session_id)
                 print("  [System]: Max retries reached. Please try asking again.\n")
                 ctx["conversation_history"] = conversation_history[:-1]
                 break

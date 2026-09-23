@@ -6,6 +6,7 @@ Delegates slash command handling to slash_commands.py and AI agent calls to agen
 """
 
 import os
+import sys
 import time
 from . import config
 from . import db
@@ -18,12 +19,18 @@ from .ui import get_user_input, print_session_header, print_recent_messages_prev
 from .slash_commands import handle_slash_command
 from .agent_loop import run_agent_loop
 from .usage_tracker import UsageTracker
+from .logger import setup_logging, get_logger
 
 
 def main():
     # --- Startup Initialization ---
+    logger = setup_logging()
+    logger.info("Starting Losna CLI v%s (Python %s on %s)", getattr(config, "VERSION", "unknown"), sys.version.split()[0], sys.platform)
+    logger.info("Active model: %s | API timeout: %ss | Max retries: %s", config.MODEL_NAME, config.API_TIMEOUT, config.MAX_RETRIES)
+
     init_db_result = db.init_db()
     current_session_id, conversation_history = session.select_session()
+    logger.info("Loaded session #%s (%d messages in history)", current_session_id, len(conversation_history))
     SYSTEM_PROMPT = conversation_history[0]["content"]
     usage_tracker = UsageTracker()
 
@@ -45,8 +52,11 @@ def main():
         if not user_input or not user_input.strip():
             continue
 
+        logger.info("Session #%s | User Input: %s", current_session_id, user_input if len(user_input) <= 200 else user_input[:200] + "...")
+
         # Check for loop termination command
         if user_input.lower() in ['/exit', '/quit']:
+            logger.info("Session #%s | User initiated shutdown via %s", current_session_id, user_input.lower())
             exit_summary = usage_tracker.format_exit_summary()
             if exit_summary:
                 print(exit_summary)

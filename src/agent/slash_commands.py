@@ -17,6 +17,7 @@ from . import plugin_manager
 from . import diff_utils
 from . import export_utils
 from . import mention_utils
+from .logger import read_recent_logs, clear_logs, get_log_path
 from .ui import print_banner, print_session_header, print_recent_messages_preview
 
 # Set of all built-in slash commands (used to detect unknown commands vs skill commands)
@@ -28,7 +29,8 @@ RESERVED_COMMANDS = {
     '/ls', 'ls', '/cd', 'cd', '/init-ai', '/init_ai', '/initai',
     '/max_tool_calls', '/max_tools', '/maxtools', '/max_tool_call',
     '/timeout',
-    '/usage'
+    '/usage',
+    '/logs', '/log'
 }
 
 
@@ -113,6 +115,8 @@ def handle_slash_command(user_input, ctx):
         return _cmd_max_tool_calls(user_input)
     if command in ("/timeout", "/api_timeout"):
         return _cmd_timeout(user_input)
+    if command in ("/logs", "/log"):
+        return _cmd_logs(user_input, ctx)
     if command in ("/init-ai", "/init_ai", "/initai"):
         return _cmd_init_ai()
     if command in ("/ls", "ls"):
@@ -126,6 +130,7 @@ def handle_slash_command(user_input, ctx):
     if user_input.startswith("/") and command not in RESERVED_COMMANDS:
         return _cmd_skill(user_input, ctx)
 
+    # Default fallthrough
     return False
 
 
@@ -134,9 +139,10 @@ def handle_slash_command(user_input, ctx):
 # ────────────────────────────────────────────────────────────────────
 
 def _cmd_help(ctx):
+    """Prints formatted help list of all available commands and installed skills."""
     skills = ctx.get("skills", [])
-    print("=== Available Commands ===")
-    print("  /help          - Show this help menu with all available commands")
+    print("\n=== Losna CLI Commands ===")
+    print("  /help          - Show this help menu of available commands")
     print("  /sessions      - List all chat sessions (tabs) and see their IDs")
     print("  /new <title>   - Start a new chat session (e.g. '/new Web Development')")
     print("  /rename [id] <title> - Rename current or specified chat session (e.g. '/rename Bug Fix')")
@@ -158,6 +164,7 @@ def _cmd_help(ctx):
     print("  @<filepath>    - Attach local file content directly into AI context (e.g. '@README.md')")
     print("  /max_tool_calls [n] - View or set max tool calls limit per turn (persisted in ~/.losnarc)")
     print("  /timeout [n]   - View or set API & streaming timeout in seconds (persisted in ~/.losnarc)")
+    print("  /logs [errors|tail|path|clear] - View or manage error & activity logs (saved to ~/.losna/logs)")
     print("  /plugin add <url> [--skill <name>] - Download and install a custom skill plugin from GitHub")
     print("  /plugin remove <name> - Uninstall/remove a custom skill plugin from local project")
     print("  /search <q>    - Search the web directly using Tavily (prompts for key if missing)")
@@ -811,3 +818,78 @@ def _cmd_skill(user_input, ctx):
     else:
         print(f"  [System]: Unknown slash command '/{cmd_name}'. Type '/help' to see available commands.\n")
         return True
+
+
+def _cmd_logs(user_input, ctx):
+    """
+    Handles the /logs command to view, filter, or clear error logs.
+
+    Usage:
+        /logs                  - View the latest 30 lines of logs
+        /logs errors           - View only ERROR, CRITICAL, and WARNING logs with full tracebacks
+        /logs tail <n>         - View the latest <n> lines
+        /logs path             - Show the absolute path of the active log file
+        /logs clear            - Clear the log file
+    """
+    parts = user_input.strip().split()
+    sub = parts[1].lower() if len(parts) > 1 else ""
+
+    log_path = get_log_path()
+    CYAN = "\033[1;36m"
+    GREEN = "\033[1;32m"
+    YELLOW = "\033[1;33m"
+    RED = "\033[1;31m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+
+    if sub in ("path", "file"):
+        print(f"\n  {CYAN}[Logs]:{RESET} Active log file: {log_path}\n")
+        return True
+
+    if sub in ("clear", "clean", "reset"):
+        if clear_logs():
+            print(f"\n  {GREEN}✔ Logs cleared successfully.{RESET} ({log_path})\n")
+        else:
+            print(f"\n  {RED}Failed to clear logs at {log_path}.{RESET}\n")
+        return True
+
+    errors_only = False
+    lines_count = 35
+
+    if sub in ("error", "errors", "err"):
+        errors_only = True
+        if len(parts) > 2 and parts[2].isdigit():
+            lines_count = int(parts[2])
+    elif sub in ("tail", "last", "-n"):
+        if len(parts) > 2 and parts[2].isdigit():
+            lines_count = int(parts[2])
+    elif sub.isdigit():
+        lines_count = int(sub)
+
+    lines = read_recent_logs(lines=lines_count, errors_only=errors_only)
+
+    header_type = f"{RED}Error & Traceback Logs{RESET}" if errors_only else f"{CYAN}Recent Logs{RESET}"
+    print(f"\n=== {header_type} (Last {len(lines)} lines from {log_path}) ===")
+
+    if not lines:
+        if errors_only:
+            print(f"  {GREEN}✔ No errors or crashes found in the log file.{RESET}\n")
+        else:
+            print(f"  {YELLOW}Log file is empty or does not exist yet.{RESET}\n")
+        return True
+
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if "[ERROR]" in stripped or "[CRITICAL]" in stripped:
+            print(f"{RED}{stripped}{RESET}")
+        elif "[WARNING]" in stripped:
+            print(f"{YELLOW}{stripped}{RESET}")
+        elif "[INFO]" in stripped:
+            print(f"{CYAN}{stripped}{RESET}")
+        elif "Traceback" in stripped or "Error:" in stripped or "Exception:" in stripped:
+            print(f"{RED}{stripped}{RESET}")
+        else:
+            print(f"{DIM}{stripped}{RESET}")
+
+    print("=" * 65 + "\n")
+    return True

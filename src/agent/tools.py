@@ -7,6 +7,9 @@ from openrouter import OpenRouter
 import requests
 from . import config
 from . import skills_loader
+from .logger import get_logger
+
+logger = get_logger("tools")
 
 # --- Helper Functions (Tools) ---
 # Configurations referenced from config module
@@ -466,6 +469,7 @@ def execute_shell_command(command, confirmed=False):
         base_dir = os.path.realpath(os.getcwd())
 
         # 5. Run with a strict timeout and capped output
+        logger.info("Running shell command: %s (cwd=%s, timeout=%ds)", command, base_dir, SHELL_TIMEOUT_SECONDS)
         result = subprocess.run(
             cmd_parts,
             shell=False,
@@ -480,15 +484,23 @@ def execute_shell_command(command, confirmed=False):
         stdout = truncate_content(result.stdout, SHELL_OUTPUT_LIMIT)
         stderr = truncate_content(result.stderr, SHELL_OUTPUT_LIMIT)
 
+        if result.returncode != 0:
+            logger.warning("Shell command '%s' failed with exit code %d. STDERR: %s", command, result.returncode, stderr[:200])
+        else:
+            logger.info("Shell command '%s' exited with code 0", command)
+
         return (f"Exit Code: {result.returncode}\n"
                 f"STDOUT:\n{stdout}\n"
                 f"STDERR:\n{stderr}")
 
     except subprocess.TimeoutExpired:
+        logger.error("Shell command '%s' timed out after %d seconds.", command, SHELL_TIMEOUT_SECONDS)
         return f"Error: Command timed out after {SHELL_TIMEOUT_SECONDS} seconds."
     except FileNotFoundError:
+        logger.warning("Shell command executable not found: '%s'", command.split()[0])
         return f"Error: Command not found ('{command.split()[0]}')."
     except Exception as e:
+        logger.error("Error executing shell command '%s': %s", command, e, exc_info=True)
         return f"Error executing command: {str(e)}"
 
 def git_commit_and_push(commit_message, confirmed=False):
