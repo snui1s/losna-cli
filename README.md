@@ -139,6 +139,8 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 | `/cd <path>`                       | Change working directory (supports '..', '~', and '-')                        |
 | `/init-ai`                         | Generate a starter 'ai.txt' blueprint file for project auto-detection         |
 | `/max_tool_calls [n]`              | View or set maximum tool call limit per turn (persisted in ~/.losnarc)        |
+| `/timeout [n]`                     | View or set API & streaming timeout in seconds (persisted in ~/.losnarc)      |
+| `/logs [errors\|tail\|path\|clear]` | View or manage persistent error & activity logs (saved to ~/.losna/logs)     |
 | `/plugin add <url>`                | Download and install all skills from a GitHub repository                      |
 | `/plugin add <url> --skill <name>` | Download and install a specific skill from a GitHub repository                |
 | `/plugin remove <name>`            | Uninstall/remove a custom skill plugin from local project                     |
@@ -162,6 +164,13 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 /cd ..
 /cd -
 
+# Error & Activity Logs Inspection
+/logs               # View the latest 35 lines of logs
+/logs errors        # Filter only errors, crashes & full stack traces
+/logs tail 50       # View the last 50 log lines
+/logs path          # Show absolute path to ~/.losna/logs/losna.log
+/logs clear         # Clear current log file
+
 # Plugin & Skill Management
 /plugin add https://github.com/JuliusBrussee/caveman
 /plugin disable caveman
@@ -177,6 +186,7 @@ All keys are stored locally in `~/.losnarc` (JSON format) and are never sent any
 
 # Tool Execution & Session Controls
 /max_tool_calls 50
+/timeout 90
 /diff src/agent/main.py
 /export ./exports/session_notes.md
 /switch 3
@@ -226,25 +236,45 @@ description: Custom team coding guidelines and security review rules.
 
 ---
 
+## Error Logging & Crash Diagnostics
+
+Losna CLI includes an automated, rotating file logging subsystem designed to capture diagnostic traces whenever the agent stalls, times out, or encounters runtime errors:
+
+- **Log File Location**: Saved locally to `~/.losna/logs/losna.log` (Windows: `%USERPROFILE%\.losna\logs\losna.log`). Can be customized via the `LOSNA_LOG_FILE` environment variable.
+- **Disk Protection**: Employs an automated `RotatingFileHandler` (capped at 5 MB per file, keeping up to 5 backups) to prevent disk space exhaustion.
+- **Streaming & Hang Detection**: Detects upstream API stalls and logs inactivity timeouts configured by `/timeout`.
+- **Automated Gateway Diagnostics**: If Time-To-First-Token (TTFT) exceeds 20 seconds, the agent triggers a non-blocking background connectivity test to OpenRouter to isolate local network issues from upstream server queue delays.
+- **Full Stack Trace Capture**: Uncaught fatal errors and daemon thread crashes are captured via `sys.excepthook` and `threading.excepthook` with complete Python tracebacks.
+- **Tool Execution Auditing**: Logs shell command timeouts, return codes, and tool failures.
+
+To inspect errors at any time during your session, run `/logs errors` or `/logs tail 50`.
+
+---
+
 ## Project Structure
 
 ```
 losna-cli/
 ├── src/
 │   └── agent/
-│       ├── main.py          # Application entry point
-│       ├── config.py        # Configuration and API key management
-│       ├── db.py            # SQLite persistence layer
-│       ├── tools.py         # Agent tool definitions, web reader & dispatcher
-│       ├── prompts.py       # System prompt builder & Read-Only constraints
-│       ├── session.py       # Session selection & management
-│       ├── memory.py        # Memory compaction logic
-│       ├── skills_loader.py # Dynamic skill loading from project files
-│       ├── plugin_manager.py# Remote plugin package installer
-│       └── ui.py            # Terminal UI (spinners, banners, markdown renderer)
+│       ├── main.py          # Application entry point & session loop orchestrator
+│       ├── agent_loop.py    # OpenRouter streaming loop, retries & tool execution
+│       ├── logger.py        # Rotating file logging, crash hooks & error filter
+│       ├── diagnostics.py   # Gateway connectivity & latency health check
+│       ├── config.py        # Global settings (~/.losnarc) & API key resolution
+│       ├── db.py            # SQLite persistence (WAL mode & transaction safety)
+│       ├── tools.py         # Sandboxed tool definitions, shell runner & web reader
+│       ├── prompts.py       # System prompt builder & Read-Only enforcement
+│       ├── session.py       # Session selection, resume & metadata management
+│       ├── memory.py        # Auto-compaction & summarization pipeline
+│       ├── slash_commands.py# Slash command dispatcher & handlers
+│       ├── skills_loader.py # Dynamic skill loading from project Markdown files
+│       ├── plugin_manager.py# Remote skill package installer from GitHub
+│       ├── usage_tracker.py # Token usage calculation & session cost accounting
+│       └── ui.py            # Terminal UI (prompt_toolkit, Rich markdown, spinners)
 ├── evals/                   # LLM evaluation datasets, metrics & benchmark runner
 ├── skills/                  # Local project skill definitions
-├── tests/                   # Automated pytest suite
+├── tests/                   # Automated pytest suite (timeout, logger, tools, db)
 ├── install.ps1              # Windows installer
 ├── install.sh               # macOS/Linux installer
 ├── pyproject.toml           # Package metadata, dependencies & bump-my-version

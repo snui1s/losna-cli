@@ -1076,7 +1076,7 @@ wheels = [
 
 [[package]]
 name = "losna-cli"
-version = "0.7.3"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "bump-my-version" },

@@ -729,7 +729,8 @@ def get_user_input(skills):
         '/switch', '/delete_session', '/history', '/plugin', '/exit', '/quit',
         '/search', '/model', '/readonly', '/diff', '/enter2confirm',
         '/pin', '/unpin', '/pins', '/export', '/clear', '/ls', '/cd',
-        '/init-ai', '/max_tool_calls', '/timeout', '/usage'
+        '/init-ai', '/max_tool_calls', '/timeout', '/usage',
+        '/logs', '/log'
     ]
     for s in skills:
         words.append(f"/{s['name']}")
