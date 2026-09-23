@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Copy, Check, Terminal, Shield, Sparkles, ArrowRight, ExternalLink } from 'lucide-react';
+import { Copy, Check, Terminal, Shield, ArrowRight, ExternalLink } from 'lucide-react';
+import GithubIcon from './icons/GithubIcon';
 
 export default function Hero() {
   const [os, setOs] = useState<'win' | 'unix'>('win');
@@ -24,7 +25,7 @@ export default function Hero() {
   return (
     <section style={{
       position: 'relative',
-      paddingTop: '140px',
+      paddingTop: '135px',
       paddingBottom: '80px',
       overflow: 'hidden',
     }}>
@@ -36,25 +37,46 @@ export default function Hero() {
         position: 'relative',
         zIndex: 1,
       }}>
+        {/* Version & Tagline Badge */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '6px 16px',
+          borderRadius: '9999px',
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          fontSize: '0.82rem',
+          color: 'var(--moon-amber)',
+          marginBottom: '26px',
+        }}>
+          <span style={{ fontWeight: 600 }}>🌒 Losna CLI</span>
+          <span style={{ opacity: 0.5 }}>•</span>
+          <span style={{ color: 'var(--text-secondary)' }}>Built for Long Conversations (And It Codes Too)</span>
+        </div>
+
         {/* Hero Title */}
         <h1 style={{
           fontSize: 'clamp(2.5rem, 5.5vw, 4.2rem)',
-          lineHeight: 1.12,
+          lineHeight: 1.15,
           fontWeight: 800,
           letterSpacing: '-0.03em',
           maxWidth: '960px',
           margin: '0 auto 24px',
         }}>
-          Deep Code Comprehension,{' '}
+          Built for{' '}
           <span style={{
             background: 'linear-gradient(135deg, #fbbf24 0%, #f97316 45%, #c084fc 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             display: 'inline-block',
           }}>
-            Zero Truncation
-          </span>,{' '}
-          True BYOK Freedom.
+            Long Conversations
+          </span>
+          .<br />
+          <span style={{ fontSize: '0.62em', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>
+            (It Just Happens to Code Too.)
+          </span>
         </h1>
 
         {/* Hero Subtitle */}
@@ -62,19 +84,17 @@ export default function Hero() {
           fontSize: 'clamp(1.05rem, 2vw, 1.25rem)',
           color: 'var(--text-secondary)',
           lineHeight: 1.6,
-          maxWidth: '740px',
-          margin: '0 auto 40px',
+          maxWidth: '680px',
+          margin: '0 auto 36px',
           fontWeight: 400,
         }}>
-          A minimalist terminal agent built for developers and security auditors. 
-          Audit architecture, detect vulnerabilities with DeepSeek V4 & Claude 3.5, 
-          and retain full control with strict <strong style={{ color: 'var(--moon-gold)' }}>Read-Only Mode</strong>.
+          A terminal AI companion built to talk for hours without losing context — backed by persistent SQLite memory and prompt caching. And when you need to code, the tools are already there.
         </p>
 
         {/* Install Box */}
         <div style={{
           maxWidth: '680px',
-          margin: '0 auto 36px',
+          margin: '0 auto 16px',
           background: 'var(--bg-secondary)',
           border: '1px solid var(--border-subtle)',
           borderRadius: '14px',
@@ -122,7 +142,7 @@ export default function Hero() {
               </button>
             </div>
             <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
-              1-step installer
+              Self-contained in ~/.losna
             </span>
           </div>
 
@@ -183,6 +203,11 @@ export default function Hero() {
           </div>
         </div>
 
+        {/* Install note */}
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '40px', fontFamily: 'var(--font-mono)' }}>
+          Launch anytime in any directory by typing <code style={{ color: 'var(--moon-amber)' }}>losna</code>
+        </p>
+
         {/* Action CTAs */}
         <div style={{
           display: 'flex',
@@ -205,8 +230,8 @@ export default function Hero() {
             className="btn-secondary"
             style={{ padding: '12px 24px', fontSize: '1rem' }}
           >
-            <Shield size={18} style={{ color: 'var(--lunar-violet)' }} />
-            Audit Safety Model
+            <GithubIcon size={18} />
+            GitHub Repository
             <ExternalLink size={14} style={{ opacity: 0.6 }} />
           </a>
         </div>
@@ -216,24 +241,24 @@ export default function Hero() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '16px',
-          maxWidth: '900px',
+          maxWidth: '960px',
           margin: '0 auto',
         }}>
           <div className="glass-panel" style={{ padding: '16px', textAlign: 'left', borderRadius: '12px' }}>
-            <div style={{ color: 'var(--moon-amber)', fontWeight: 700, fontSize: '1.25rem', marginBottom: '2px' }}>0% Markup</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Bring Your Own Key (OpenRouter). Zero token tax.</div>
+            <div style={{ color: 'var(--moon-amber)', fontWeight: 700, fontSize: '1.2rem', marginBottom: '2px' }}>Marathon Sessions</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Auto-compaction summarizes earlier turns so conversations never break.</div>
           </div>
           <div className="glass-panel" style={{ padding: '16px', textAlign: 'left', borderRadius: '12px' }}>
-            <div style={{ color: 'var(--lunar-violet)', fontWeight: 700, fontSize: '1.25rem', marginBottom: '2px' }}>Read-Only Guard</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Strict schema & runtime locks for safe production audits.</div>
+            <div style={{ color: 'var(--moon-gold)', fontWeight: 700, fontSize: '1.2rem', marginBottom: '2px' }}>SQLite Memory</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Multi-session history in agent_data.db with /pin immortal memory.</div>
           </div>
           <div className="glass-panel" style={{ padding: '16px', textAlign: 'left', borderRadius: '12px' }}>
-            <div style={{ color: 'var(--moon-gold)', fontWeight: 700, fontSize: '1.25rem', marginBottom: '2px' }}>SQLite Memory</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Multi-session tabs with auto-compaction & rule pinning.</div>
+            <div style={{ color: 'var(--lunar-violet)', fontWeight: 700, fontSize: '1.2rem', marginBottom: '2px' }}>Prompt Caching</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>OpenRouter prefix caching cuts token cost by ~90% for endless chats.</div>
           </div>
           <div className="glass-panel" style={{ padding: '16px', textAlign: 'left', borderRadius: '12px' }}>
-            <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: '1.25rem', marginBottom: '2px' }}>Web Intelligence</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Trafilatura article extraction & live Tavily search.</div>
+            <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: '1.2rem', marginBottom: '2px' }}>And It Codes Too</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>@file mentions, file editing, shell commands & /readonly mode on demand.</div>
           </div>
         </div>
       </div>

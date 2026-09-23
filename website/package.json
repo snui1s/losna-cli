@@ -1,10 +1,12 @@
 {
   "name": "losna-website",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && bun scripts/copy-to-docs.mjs",
+    "export-docs": "bun scripts/copy-to-docs.mjs",
+    "preview": "bun scripts/preview.mjs",
     "start": "next start"
   },
   "dependencies": {

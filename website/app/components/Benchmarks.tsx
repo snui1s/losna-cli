@@ -6,39 +6,45 @@ import { Check, X, Shield, Zap } from 'lucide-react';
 export default function Benchmarks() {
   const comparisons = [
     {
-      feature: 'Pricing Model',
-      losna: '100% BYOK (Zero Token Markup)',
-      others: '$20–$40/mo + Marked up tokens',
-      advantage: true,
-    },
-    {
-      feature: 'Deep Reasoning Output',
-      losna: 'Full, untruncated architecture analysis',
-      others: 'Often truncated to preserve provider bandwidth',
-      advantage: true,
-    },
-    {
-      feature: 'Strict Read-Only Mode',
-      losna: 'Schema & runtime locked (/readonly)',
-      others: 'Prompt-only suggestion (can still execute writes)',
-      advantage: true,
-    },
-    {
-      feature: 'Destructive Shell Interception',
-      losna: 'Interactive colored (y/n) confirmation gate',
-      others: 'Unmonitored execution or rigid whitelist',
-      advantage: true,
-    },
-    {
       feature: 'Chat & Memory Persistence',
-      losna: 'Local SQLite (agent_data.db) + auto-compaction',
-      others: 'Ephemeral or uploaded to 3rd party servers',
+      losna: 'Local SQLite (~/.losna) + /pin immortal memory',
+      others: 'Ephemeral or lost after closing terminal',
       advantage: true,
     },
     {
-      feature: 'Open Skill System',
-      losna: 'Native Markdown in ./skills/ & GitHub installer',
-      others: 'Proprietary or closed extensions',
+      feature: 'Context Endurance',
+      losna: 'Auto-compaction (multi-turn summary + fact extraction)',
+      others: 'Abrupt context overflow or amnesia after ~15 turns',
+      advantage: true,
+    },
+    {
+      feature: 'Pricing & Token Efficiency',
+      losna: '100% BYOK + OpenRouter Prefix Caching (up to 90% off)',
+      others: '$20–$40/mo subscription + marked-up tokens',
+      advantage: true,
+    },
+    {
+      feature: 'Language Naturalness',
+      losna: 'Strict language matching (100% Thai, 0% Chinese bleed)',
+      others: 'Random thinking bleed & awkward translations',
+      advantage: true,
+    },
+    {
+      feature: 'Code & Execution Tools',
+      losna: 'Full workspace suite + strict /readonly safety gate',
+      others: 'Chat-only or unrestricted dangerous shell',
+      advantage: true,
+    },
+    {
+      feature: 'Crash Diagnostics & Logs',
+      losna: '5MB rotating logs (~/.losna/logs) + TTFT ping test',
+      others: 'Opaque silent crashes with zero local trace',
+      advantage: true,
+    },
+    {
+      feature: 'Extensibility',
+      losna: 'Markdown skills in ./skills/ & GitHub /plugin installer',
+      others: 'Proprietary or closed extension ecosystem',
       advantage: true,
     },
   ];
@@ -52,10 +58,10 @@ export default function Benchmarks() {
     }}>
       <div style={{ textAlign: 'center', marginBottom: '40px' }}>
         <h2 style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.5rem)', marginBottom: '14px' }}>
-          Engineered Differently
+          Engineered for Marathon Sessions
         </h2>
-        <p style={{ color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto', fontSize: '1rem' }}>
-          See how Losna CLI prioritizes developer sovereignty, safety, and depth over restrictive closed ecosystems.
+        <p style={{ color: 'var(--text-secondary)', maxWidth: '640px', margin: '0 auto', fontSize: '1rem' }}>
+          Compare how Losna CLI stays sharp across hours of conversation compared to typical ephemeral AI wrappers.
         </p>
       </div>
 

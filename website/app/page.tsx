@@ -38,10 +38,10 @@ export default function Home() {
         }}>
           <div style={{ position: 'relative', zIndex: 1 }}>
             <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', marginBottom: '16px', lineHeight: 1.2 }}>
-              Ready to Audit with Pure BYOK Freedom?
+              Ready for an AI You Can Actually Talk to for Hours?
             </h2>
             <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', margin: '0 auto 36px', fontSize: '1.05rem', lineHeight: 1.6 }}>
-              Run the one-line installer, plug in your OpenRouter API key, and experience deep terminal code analysis without limits.
+              Run the one-line installer, plug in your OpenRouter API key, and experience marathon terminal conversations with persistent memory — and instant coding powers when you need them.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>

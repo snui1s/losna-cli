@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { DISPLAY_VERSION } from '../lib/version';
 
 export default function Footer() {
   const pathname = usePathname();
@@ -47,13 +48,26 @@ export default function Footer() {
         }}>
           {/* Brand & Mission */}
           <div style={{ maxWidth: '380px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
               <span style={{ fontSize: '1.4rem' }}>🌒</span>
               <span style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.02em' }}>losna-cli</span>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                background: 'rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                color: 'var(--moon-amber)',
+                fontFamily: 'monospace',
+                letterSpacing: '0.02em',
+              }}>
+                {DISPLAY_VERSION}
+              </span>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-              An all-around, deep AI terminal assistant for code comprehension, architecture inspection, 
-              and security auditing. Built with pure BYOK freedom.
+              A terminal AI companion crafted for marathon conversations, persistent memory, 
+              and effortless coding assistance when you need it. Pure BYOK freedom.
             </p>
           </div>
 
@@ -114,7 +128,7 @@ export default function Footer() {
           color: 'var(--text-muted)',
         }}>
           <div>
-            © {new Date().getFullYear()} Losna CLI. Open source under Apache 2.0 License.
+            © {new Date().getFullYear()} Losna CLI ({DISPLAY_VERSION}). Open source under Apache 2.0 License.
           </div>
           <div style={{ display: 'flex', gap: '16px' }}>
             <span>Privacy First (BYOK)</span>

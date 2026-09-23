@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Terminal, BookOpen, Menu, X, ShieldCheck } from 'lucide-react';
 import GithubIcon from './icons/GithubIcon';
+import { DISPLAY_VERSION } from '../lib/version';
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -73,17 +74,6 @@ export default function Navbar() {
             gap: '8px',
           }}>
             losna
-            <span style={{
-              fontSize: '0.7rem',
-              fontWeight: 500,
-              padding: '2px 7px',
-              borderRadius: '9999px',
-              background: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              color: 'var(--moon-amber)',
-            }}>
-              v0.1.0
-            </span>
           </span>
         </Link>
 

@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Key,
   Flame,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -63,6 +64,11 @@ export default function DocsPage() {
     { command: '/plugin list', category: 'Plugin', description: 'List all installed skill plugins and their activation status.' },
     { command: '/plugin enable <name>', category: 'Plugin', description: 'Enable a previously disabled skill plugin globally.' },
     { command: '/plugin disable <name>', category: 'Plugin', description: 'Disable an active skill plugin globally.' },
+    { command: '/logs [errors|tail|path|clear]', category: 'System', description: 'Inspect or manage rotating error logs saved in ~/.losna/logs/losna.log.' },
+    { command: '/timeout [seconds]', category: 'System', description: 'View or set API streaming inactivity timeout in seconds (persisted in ~/.losnarc).' },
+    { command: '/search <query>', category: 'System', description: 'Perform live web searches via Tavily and synthesize relevant documentation.' },
+    { command: '/usage', category: 'Session', description: 'Display session token usage stats and estimated OpenRouter cost breakdown.' },
+    { command: '@<filepath>', category: 'Security', description: 'Smart file mention — injects file content into context with path traversal protection.' },
     { command: '/<skill> on|off|status', category: 'Plugin', description: 'Quick toggle or inspect status for any loaded skill.' },
   ];
 
@@ -119,6 +125,7 @@ export default function DocsPage() {
             <a href="#commands" className="sidebar-link">4. Slash Commands Directory</a>
             <a href="#plugins" className="sidebar-link">5. Plugin & Skill Development</a>
             <a href="#architecture" className="sidebar-link">6. SQLite Memory Architecture</a>
+            <a href="#diagnostics" className="sidebar-link">7. Error Logging & Diagnostics</a>
           </div>
 
           <div style={{
@@ -144,7 +151,7 @@ export default function DocsPage() {
               Losna CLI Documentation & Manual
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              Complete guide to installing, configuring, securing, and extending your terminal AI auditing companion.
+              Complete guide to installing, configuring, conversing, and extending your terminal AI companion with persistent memory and coding powers.
             </p>
           </div>
 
@@ -463,6 +470,60 @@ losna > /plugin add https://github.com/snui1s/losna-plugins --skill security-aud
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* Section 7: Crash Logging & Diagnostics */}
+          <section id="diagnostics" style={{ marginBottom: '60px', scrollMarginTop: '100px' }}>
+            <h2 style={{ fontSize: '1.7rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertTriangle size={22} style={{ color: '#f43f5e' }} />
+              7. Crash Logging & Diagnostics Subsystem
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '16px' }}>
+              Losna CLI includes an automated rotating file logging subsystem to capture diagnostic traces whenever the agent stalls, times out, or encounters uncaught exceptions.
+            </p>
+
+            <div className="glass-panel" style={{ padding: '24px', marginBottom: '20px' }}>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ color: 'var(--moon-amber)' }}>•</span>
+                  <span><strong>Log Location:</strong> Written to <code style={{ color: '#fff' }}>~/.losna/logs/losna.log</code>. Customizable via <code style={{ color: '#fbbf24' }}>LOSNA_LOG_FILE</code> environment variable.</span>
+                </li>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ color: 'var(--moon-amber)' }}>•</span>
+                  <span><strong>Disk Protection:</strong> Employs an automated <code style={{ color: '#fff' }}>RotatingFileHandler</code> (5MB per file, keeping up to 5 backups).</span>
+                </li>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ color: 'var(--moon-amber)' }}>•</span>
+                  <span><strong>Streaming Hang Detector:</strong> Inactivity timeouts configured by <code style={{ color: '#fbbf24' }}>/timeout &lt;seconds&gt;</code> are logged automatically.</span>
+                </li>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ color: 'var(--moon-amber)' }}>•</span>
+                  <span><strong>Automated Gateway Diagnostics:</strong> If Time-To-First-Token (TTFT) exceeds 20s, a non-blocking background connectivity test to OpenRouter triggers to isolate local network issues from upstream server delays.</span>
+                </li>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ color: 'var(--moon-amber)' }}>•</span>
+                  <span><strong>Global Crash Hooks:</strong> Uncaught fatal exceptions are captured via <code style={{ color: '#fff' }}>sys.excepthook</code> and <code style={{ color: '#fff' }}>threading.excepthook</code> with complete Python tracebacks.</span>
+                </li>
+              </ul>
+            </div>
+
+            <pre style={{
+              background: '#09080e',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '10px',
+              padding: '16px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.85rem',
+              color: '#f8fafc',
+              overflowX: 'auto',
+            }}>
+{`# Inspect recent logs or errors anytime:
+losna > /logs errors      # Show errors and tracebacks only
+losna > /logs tail 50     # View last 50 log lines
+losna > /logs path        # Show absolute log path
+losna > /logs clear       # Reset active log file
+losna > /timeout 90       # Set API timeout to 90 seconds`}
+            </pre>
           </section>
         </main>
       </div>
